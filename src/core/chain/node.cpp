@@ -1,0 +1,91 @@
+#include "core/chain/node.hpp"
+
+namespace tuxedo {
+
+Node::Node(Node *previous) : previous_(previous) {}
+
+Node::~Node() {
+	request_stop();
+	join();
+}
+
+void Node::launch() {
+	if(worker_.joinable()) return;
+	worker_ = std::thread([this] { thread_entry(); });
+}
+
+void Node::request_stop() {
+	should_continue_.store(false);
+	std::lock_guard<std::mutex> g(mtx_);
+	not_full_.notify_all();
+	not_empty_.notify_all();
+}
+
+void Node::join() {
+	if(worker_.joinable()) worker_.join();
+}
+
+void Node::thread_entry() {
+	process();
+	set_end_of_stream(true);
+	std::lock_guard<std::mutex> g(mtx_);
+	not_empty_.notify_all();
+}
+
+void Node::write_chunk(AudioChunk chunk) {
+	if(chunk.empty()) return;
+
+	std::unique_lock<std::mutex> lk(mtx_);
+	not_full_.wait(lk, [this] {
+		return !should_continue_.load() || buffered_frames_ < kMaxBufferedFrames;
+	});
+	if(!should_continue_.load()) return;
+
+	if(!peek_format_.valid()) peek_format_ = chunk.format();
+	buffered_frames_ += chunk.frame_count();
+	buffer_.push_back(std::move(chunk));
+	not_empty_.notify_one();
+}
+
+AudioChunk Node::read_chunk(size_t max_frames) {
+	std::unique_lock<std::mutex> lk(mtx_);
+	not_empty_.wait(lk, [this] {
+		return !buffer_.empty() || end_of_stream_.load() || !should_continue_.load();
+	});
+	if(buffer_.empty()) return {};
+
+	AudioChunk &front = buffer_.front();
+	AudioChunk out;
+	if(front.frame_count() <= max_frames) {
+		out = std::move(front);
+		buffer_.pop_front();
+	} else {
+		out = front.remove_frames(max_frames);
+	}
+	buffered_frames_ -= out.frame_count();
+	not_full_.notify_one();
+	return out;
+}
+
+bool Node::peek_format(StreamFormat &out) {
+	std::unique_lock<std::mutex> lk(mtx_);
+	not_empty_.wait(lk, [this] {
+		return peek_format_.valid() || end_of_stream_.load() || !should_continue_.load();
+	});
+	if(!peek_format_.valid()) return false;
+	out = peek_format_;
+	return true;
+}
+
+size_t Node::frames_buffered() {
+	std::lock_guard<std::mutex> g(mtx_);
+	return buffered_frames_;
+}
+
+double Node::seconds_buffered() {
+	std::lock_guard<std::mutex> g(mtx_);
+	if(!peek_format_.valid()) return 0.0;
+	return double(buffered_frames_) / peek_format_.sample_rate;
+}
+
+} // namespace tuxedo
