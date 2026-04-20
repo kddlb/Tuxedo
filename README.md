@@ -54,7 +54,8 @@ Responses:
  "duration": 156.0, "volume": 0.5, "url": "..."}
 ```
 
-Async events (socket and stdin subscribers only — HTTP is request/reply):
+Async events (socket and stdin subscribers; HTTP clients get the same
+stream via `GET /events` as Server-Sent Events):
 
 ```json
 {"event": "status_changed", "state": "playing", "url": "..."}
@@ -67,13 +68,20 @@ Async events (socket and stdin subscribers only — HTTP is request/reply):
 
 ```
 GET  /status
-POST /play      body: {"url": "..."}
+GET  /metadata
+GET  /queue
+GET  /events        text/event-stream; `data: <json>\n\n` per event,
+                    `:\n\n` heartbeats every 15s of idle.
+POST /play          body: {"url": "..."}
+POST /queue         body: {"url": "..."}
+POST /queue_clear
+POST /skip
 POST /pause
 POST /resume
 POST /stop
-POST /seek      body: {"seconds": N}
-POST /volume    body: {"value": 0..1}
-POST /rpc       body: full request object
+POST /seek          body: {"seconds": N}
+POST /volume        body: {"value": 0..1}
+POST /rpc           body: full request object
 ```
 
 ### Stdin (dev console)
@@ -91,9 +99,15 @@ quit
 
 ## Supported formats
 
-MP3, WAV, Ogg Vorbis via miniaudio; FLAC via libFLAC. More decoders
-(Opus, WavPack, Musepack, …) will be ported from Cog as the `Decoder`
-ABI stabilises.
+MP3, WAV, Ogg Vorbis via miniaudio; FLAC via libFLAC; Opus via
+libopusfile. More decoders (WavPack, Musepack, …) will be ported
+from Cog as the `Decoder` ABI stabilises.
+
+## Build dependencies
+
+- Meson + Ninja + a C++17 compiler.
+- `libFLAC` (`brew install flac`).
+- `libopusfile` (`brew install opusfile`).
 
 ## Status
 

@@ -1,8 +1,12 @@
 #include "ipc/http_server.hpp"
 
+#include "ipc/event_mailbox.hpp"
+
 #include <httplib.h>
 
+#include <chrono>
 #include <cstdio>
+#include <memory>
 
 namespace tuxedo {
 
@@ -61,6 +65,34 @@ bool HttpServer::start() {
 	srv_->Get("/queue", [this](const httplib::Request &, httplib::Response &res) {
 		json req{{"op", "queue_list"}};
 		reply(res, ctl_.dispatch(req));
+	});
+
+	// Server-Sent Events: stream player events to HTTP subscribers.
+	srv_->Get("/events", [this](const httplib::Request &, httplib::Response &res) {
+		auto box = std::make_shared<EventMailbox>(64);
+		Controller::Token token = ctl_.subscribe(
+		    [box](const json &ev) { box->push(ev.dump()); });
+
+		res.set_header("Cache-Control", "no-cache");
+		res.set_header("X-Accel-Buffering", "no");
+
+		res.set_chunked_content_provider(
+		    "text/event-stream",
+		    [box](size_t /*offset*/, httplib::DataSink &sink) -> bool {
+			    std::string msg;
+			    if(!box->pop_for(msg, std::chrono::seconds(15))) {
+				    // Heartbeat comment — keeps intermediaries from
+				    // dropping the connection during idle periods.
+				    static const char kBeat[] = ":\n\n";
+				    return sink.write(kBeat, sizeof(kBeat) - 1);
+			    }
+			    const std::string framed = "data: " + msg + "\n\n";
+			    return sink.write(framed.data(), framed.size());
+		    },
+		    [this, token, box](bool /*success*/) {
+			    ctl_.unsubscribe(token);
+			    box->close();
+		    });
 	});
 
 	// Generic dispatch for anything else — body should be a full request.
