@@ -15,10 +15,25 @@ cxx = meson.get_compiler('cpp')
 
 thread_dep = dependency('threads')
 
+# libFLAC — try pkg-config first, fall back to Homebrew's keg-only layout.
+flac_dep = dependency('flac', required: false)
+if not flac_dep.found()
+  brew_flac = '/opt/homebrew/opt/flac'
+  flac_lib = cxx.find_library('FLAC', dirs: [brew_flac + '/lib'], required: false)
+  if flac_lib.found()
+    flac_dep = declare_dependency(
+      include_directories: include_directories(brew_flac + '/include', is_system: true),
+      dependencies: [flac_lib],
+    )
+  else
+    error('libFLAC not found — install via `brew install flac` or set PKG_CONFIG_PATH')
+  endif
+endif
+
 # miniaudio — single-header, compiled into its own TU in src/output
 miniaudio_inc = include_directories('vendor/miniaudio')
 
-deps = [thread_dep]
+deps = [thread_dep, flac_dep]
 
 host = host_machine.system()
 if host == 'darwin'
@@ -51,6 +66,7 @@ core_sources = files(
   'src/core/chain/buffer_chain.cpp',
   'src/plugin/registry.cpp',
   'src/plugin/file_source.cpp',
+  'src/plugin/flac_decoder.cpp',
   'src/plugin/miniaudio_decoder.cpp',
   'src/output/miniaudio_backend.cpp',
   'src/ipc/stdin_control.cpp',

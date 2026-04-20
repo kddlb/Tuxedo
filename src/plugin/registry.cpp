@@ -1,6 +1,7 @@
 #include "plugin/registry.hpp"
 
 #include "plugin/file_source.hpp"
+#include "plugin/flac_decoder.hpp"
 #include "plugin/miniaudio_decoder.hpp"
 
 #include <algorithm>
@@ -62,11 +63,14 @@ void register_builtin_plugins() {
 	auto &r = PluginRegistry::instance();
 	r.register_source("file", [] { return SourcePtr(new FileSource()); });
 
-	// miniaudio handles mp3/flac/wav/vorbis; one factory, register for all known exts.
+	// miniaudio covers mp3/wav/vorbis for the MVP.
 	auto ma_factory = [] { return DecoderPtr(new MiniaudioDecoder()); };
-	for(const char *ext : {"mp3", "flac", "wav", "wave", "ogg", "oga"}) {
+	for(const char *ext : {"mp3", "wav", "wave", "ogg", "oga"}) {
 		r.register_decoder(ext, ma_factory);
 	}
+
+	// libFLAC takes over .flac — lossless path, more accurate metadata later.
+	r.register_decoder("flac", [] { return DecoderPtr(new FlacDecoder()); });
 }
 
 } // namespace tuxedo
