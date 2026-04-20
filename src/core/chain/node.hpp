@@ -47,6 +47,11 @@ public:
 	// Returns an empty chunk at end-of-stream.
 	AudioChunk read_chunk(size_t max_frames);
 
+	// Drops all buffered chunks. Intended for seek — unblocks any waiter
+	// in write_chunk so the producer can loop around and produce fresh,
+	// post-seek audio.
+	void flush_buffer();
+
 	// Format declared by the chunks in our buffer (first one wins).
 	bool peek_format(StreamFormat &out);
 

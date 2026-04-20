@@ -48,7 +48,12 @@ void InputNode::process() {
 
 	while(should_continue()) {
 		int64_t seek_to = pending_seek_.exchange(-1);
-		if(seek_to >= 0) decoder_->seek(seek_to);
+		if(seek_to >= 0) {
+			// Any chunks already queued are pre-seek — discard them so the
+			// OutputNode starts consuming post-seek audio on its next pull.
+			flush_buffer();
+			decoder_->seek(seek_to);
+		}
 
 		AudioChunk chunk;
 		if(!decoder_->read(chunk, kReadFrames)) break;

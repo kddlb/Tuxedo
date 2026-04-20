@@ -69,6 +69,11 @@ bool Player::seek_seconds(double seconds) {
 	if(!fmt.valid()) return false;
 	int64_t frame = static_cast<int64_t>(seconds * fmt.sample_rate);
 	chain_->input()->request_seek(frame);
+	// Drop queued pre-seek audio in both stages so the device callback
+	// cuts straight to post-seek content on the next pull.
+	chain_->input()->flush_buffer();
+	output_->flush_leftover();
+	output_->set_position_frames(frame);
 	return true;
 }
 

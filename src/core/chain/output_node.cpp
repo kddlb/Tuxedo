@@ -46,6 +46,11 @@ void OutputNode::resume() {
 	paused_.store(false);
 }
 
+void OutputNode::flush_leftover() {
+	std::lock_guard<std::mutex> g(leftover_mtx_);
+	leftover_ = {};
+}
+
 double OutputNode::seconds_played() const {
 	if(!format_.valid()) return 0.0;
 	return double(frames_played_.load()) / format_.sample_rate;

@@ -31,11 +31,18 @@ public:
 	void set_volume(double v) { volume_.store(v); }
 	double volume() const { return volume_.load(); }
 
-	// Frames played since open(); used to derive the position clock.
+	// Absolute playback position, in frames, at the output device.
+	// Advances as render() emits samples; `set_position_frames` resets
+	// the counter (e.g. after a seek).
 	int64_t frames_played() const { return frames_played_.load(); }
+	void set_position_frames(int64_t f) { frames_played_.store(f); }
 	double seconds_played() const;
 
 	StreamFormat format() const { return format_; }
+
+	// Drop any partial chunk the render callback is holding back. Called
+	// alongside a seek so the next render() can only emit post-seek audio.
+	void flush_leftover();
 
 	// Called by the backend on its audio thread.
 	void render(float *dst, size_t frames);

@@ -67,6 +67,14 @@ AudioChunk Node::read_chunk(size_t max_frames) {
 	return out;
 }
 
+void Node::flush_buffer() {
+	std::lock_guard<std::mutex> g(mtx_);
+	buffer_.clear();
+	buffered_frames_ = 0;
+	not_full_.notify_all();
+	not_empty_.notify_all();
+}
+
 bool Node::peek_format(StreamFormat &out) {
 	std::unique_lock<std::mutex> lk(mtx_);
 	not_empty_.wait(lk, [this] {
