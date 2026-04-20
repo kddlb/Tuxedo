@@ -35,9 +35,10 @@ an explicit *don't-build-from-Claude* memory.)
 
 ## Build dependencies
 
-- macOS: `brew install meson ninja flac opusfile`.
+- macOS: `brew install meson ninja flac opusfile libvorbis libid3tag`.
 - Linux (untested as of writing): `pkg-config`, `libflac-dev`,
-  `libopusfile-dev`, ALSA/Pulse dev headers for miniaudio's backend.
+  `libopusfile-dev`, `libvorbis-dev`, `libid3tag-dev`, ALSA/Pulse dev
+  headers for miniaudio's backend.
 - Vendored, no action needed: miniaudio, nlohmann/json, cpp-httplib —
   all under `vendor/`.
 
@@ -53,8 +54,9 @@ src/
 │   └── chain/                        the playback graph
 │       ├── node.{hpp,cpp}            threaded producer base w/ ring buffer
 │       ├── input_node.{hpp,cpp}      drives a Decoder
+│       ├── converter_node.{hpp,cpp}  ma_data_converter; identity when input==target
 │       ├── output_node.{hpp,cpp}    render callback; atomic next_source hot-swap
-│       └── buffer_chain.{hpp,cpp}    owns InputNode, remembers URL
+│       └── buffer_chain.{hpp,cpp}    owns Input + Converter; retarget + seek
 ├── plugin/                           plugin interfaces + implementations
 │   ├── source.hpp                    I/O interface (file/http/…)
 │   ├── decoder.hpp                   Decoder interface: open/read/seek/metadata
@@ -62,9 +64,12 @@ src/
 │   ├── registry.{hpp,cpp}            static registration by scheme/extension
 │   ├── input/                        SOURCES + DECODERS go here
 │   │   ├── file_source.{hpp,cpp}
+│   │   ├── vorbis_common.{hpp,cpp}   shared helpers for VC-tagged decoders
 │   │   ├── flac_decoder.{hpp,cpp}    libFLAC, STREAMINFO+VC+PICTURE
 │   │   ├── opus_decoder.{hpp,cpp}    libopusfile, VC+PICTURE+R128
-│   │   └── miniaudio_decoder.{hpp,cpp}  MP3/WAV/OGG fallback, no tags
+│   │   ├── vorbis_decoder.{hpp,cpp}  libvorbisfile, VC+METADATA_BLOCK_PICTURE
+│   │   ├── mp3_decoder.{hpp,cpp}     ma_decoder + libid3tag (ID3v1/v2 + APIC + TXXX)
+│   │   └── miniaudio_decoder.{hpp,cpp}  WAV fallback (no tags)
 │   ├── output/                       OUTPUT BACKENDS go here
 │   │   └── miniaudio_backend.{hpp,cpp}
 │   └── dsp/                          EFFECTS will go here (empty)
@@ -87,8 +92,12 @@ plugins themselves.
 
 1. **Player** owns a current `BufferChain` and a `std::deque` queue of
    pre-built, pre-decoding `BufferChain`s for gapless.
-2. **BufferChain** holds an `InputNode` (decoder thread) and remembers
-   the URL it was opened with.
+2. **BufferChain** holds an `InputNode` (decoder thread) and a
+   `ConverterNode` (sample-rate / channel adapter, identity when
+   input matches target), and remembers the URL it was opened with.
+   Chains launch lazily — only when promoted to current or armed as
+   next-source — so the converter always starts with the right target
+   format.
 3. **Node** base class: worker thread, ring buffer, `read_chunk` waits
    on a condvar until data or end-of-stream.
 4. **OutputNode** is NOT threaded. It's called from miniaudio's audio
@@ -99,9 +108,14 @@ plugins themselves.
 5. **Player watchdog thread** is woken by atomic-signalled
    `on_stream_consumed` / `on_stream_advanced` callbacks from the
    audio thread. It pops the queue front, emits events, re-arms
-   `next_source_` if another queued track matches the output format.
-6. **Format mismatch**: the watchdog tears down + reopens the output
-   device at the new format. Audible ~50–100 ms gap; known limitation.
+   `next_source_` on the new head (any format — the converter handles
+   it).
+6. **Format mismatch is transparent**: the queue head's ConverterNode
+   is retargeted to the current output format when it's armed, so
+   rate/channel changes go through the same atomic `next_source_`
+   hot-swap as same-format transitions — no device teardown, no gap.
+   The legacy teardown+reopen code is still present as a race-case
+   fallback when a late `queue()` loses to drain.
 7. **Controller** is the single JSON-in/JSON-out dispatch. All three
    transports (socket, HTTP, stdin) go through it. Events fan out via
    `Controller::subscribe(cb)` → multiple subscribers (tokens).
@@ -130,10 +144,14 @@ fields: `title`, `artist`, `album`, `albumartist`, `tracknumber`,
 `discnumber`, `date`, `genre`, `replaygain_*`, `unsyncedlyrics`,
 `codec` (scalar), `album_art: {mime, data_b64}`.
 
-FLAC and Opus apply Cog's two renames: `"lyrics"`/`"unsynced lyrics"`
-→ `"unsyncedlyrics"`; `"comments:itunnorm"` → `"soundcheck"`. Opus
+All four tag-capable decoders (FLAC, Opus, Vorbis, MP3) share one
+canonicalisation pipeline in `src/plugin/input/vorbis_common.*` and
+apply Cog's two renames: `"lyrics"` / `"unsynced lyrics"` →
+`"unsyncedlyrics"`; `"comments:itunnorm"` → `"soundcheck"`. Opus
 additionally surfaces raw R128 centibel-q8 values under
 `r128_*_gain_q8` fields alongside formatted `replaygain_*` strings.
+The MP3 decoder splits `TRCK` / `TPOS` "N/M" values into
+`tracknumber` + `tracktotal` / `totaldiscs`.
 
 ## Non-obvious gotchas
 
@@ -171,6 +189,11 @@ additionally surfaces raw R128 centibel-q8 values under
 - Commit messages: imperative subject, explanatory body, trailer
   `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
   Commits land directly on `main` unless the user says otherwise.
+  **Never name specific test files or paths** in commit bodies when
+  mentioning smoke-test results. Say "smoke tested FLAC / Opus
+  mixed-format gapless," not "smoke tested
+  `/Volumes/gigante/…/Sun King.flac`." Specific paths leak the user's
+  personal media layout and rot quickly.
 
 ## Verification habit
 
@@ -187,23 +210,109 @@ After non-trivial changes:
 4. For SSE or socket work: drive via `curl -N /events` or
    `nc -U /tmp/tuxedo-$UID.sock`, not just the log.
 
-## Known MVP gaps
+## Continuing this project
 
-- **Format-mismatched gapless** falls back to device reopen (audible
-  gap). A miniaudio `ma_data_converter`-backed `ConverterNode` would
-  close this gap.
-- **MP3 / Ogg Vorbis metadata**: miniaudio is tag-less. A dedicated
-  libvorbisfile decoder (Vorbis comments) and a libid3tag-based MP3
-  reader would surface tags there too.
+tuxedo is an incremental port of Cog's architecture. **When the user
+asks for a next step** — "what's next?", "keep going", "continue the
+project", "anything else to port?" — **always run an Explore agent
+over `/Users/kevin/src/Cog` before recommending**. The "Port status"
+catalog below is the running record but lags Cog's upstream; check
+`Cog/Plugins/`, `Cog/Audio/Chain/`, and `Cog/Audio/Output/` for new
+or moved components, and read the relevant headers to get the
+library dependency and API surface before scoping the work.
+
+Cog's GitHub org is **losnoco** (not "losno"). Upstream URL:
+`github.com/losnoco/Cog`.
+
+## Port status (as of 2026-04)
+
+### Ported
+
+- **Chain nodes**: `Node`, `InputNode`, `ConverterNode` (miniaudio
+  `ma_data_converter`; identity fast-path), `OutputNode`,
+  `BufferChain`. Plus `AudioChunk` (interleaved float32,
+  `src/core/audio_chunk.*`).
+- **Orchestrator**: `Player` ≈ Cog's `AudioPlayer` (queue, watchdog,
+  event fan-out). Simpler — no playlist, no library catalog.
+- **Decoders**: FLAC (libFLAC), Opus (libopusfile), Ogg Vorbis
+  (libvorbisfile), MP3 (`ma_decoder` + libid3tag), WAV (miniaudio
+  fallback; no tags).
+- **Sources**: `FileSource` only.
+- **Output**: miniaudio cross-platform backend (Cog uses
+  CoreAudio/AVFoundation on macOS).
+
+### High-value ports still open
+
+- **HTTP source** — streaming URLs. Cog: `Plugins/HTTPSource/`.
+- **CoreAudio decoder** — AAC / M4A / ALAC. Dominates most macOS
+  libraries. Cog: `Plugins/CoreAudio/`.
+- **FFmpeg decoder** — universal codec fallback; one dep replaces
+  many niche decoders below. Cog: `Plugins/FFMPEG/`.
+- **CueSheet container** — virtual tracks from `.cue`. Cog:
+  `Plugins/CueSheet/`.
+- **M3U / PLS** playlist parsers. Cog: `Plugins/M3u/`, `Plugins/Pls/`.
+- **ReplayGain application** — tags are already surfaced; needs a
+  DSP stage that applies them. Cog handles this in its fader node.
+- **`DSPFaderNode`** — fade-in/out, smooth stop. Cog:
+  `Audio/Chain/DSP/DSPFaderNode.*`.
+- **ArchiveSource** — read from inside ZIP/7Z/RAR. Cog:
+  `Plugins/ArchiveSource/`.
+
+### Lossless / niche-format decoders
+
+- WavPack (libwavpack), Musepack (libmusepack), Shorten (libshorten).
+
+### DSP / effects
+
+- `DSPEqualizerNode` — multiband EQ.
+- `DSPDownmixNode` + `Downmix` — proper channel-layout-aware
+  surround-to-stereo matrixing.
+- `DSPHRTFNode` + `HeadphoneFilter` — HRTF crossfeed.
+- `DSPFSurroundNode` + `FSurroundFilter` — stereo → surround upmix.
+- `DSPRubberbandNode` — pitch/tempo shift (librubberband).
+- `DSPSignalsmithStretchNode` — alt. time-stretch engine.
+- `VisualizationNode` — audio-thread tap for spectrum/waveform.
+
+### Chiptune / demoscene / game formats
+
+GME (multi-system game music), vgmstream (500+ game formats), libvgm,
+SID (sidplayfp), DUMB / modplay / OpenMPT / playptmod (trackers),
+MIDI + soundfont, AdPlug (OPL2/3), HighlyComplete, Hively, Syntrax,
+Organya, APL, BASSMODS. All separate libraries.
+
+### Metadata / library
+
+- `AudioMetadataReader` / `Writer` + TagLib integration — would
+  replace the per-decoder tag code with one backend that handles
+  every format at once, and unlock tag writing (prerequisite for a
+  ReplayGain scanner).
+- Persistent track catalog (Core Data in Cog; out of scope for a
+  headless daemon but worth flagging if the client-side story changes).
+
+### Control surfaces (mostly client-side, may stay out of scope)
+
+- AppleScript / `Cog.sdef` — macOS OSA handlers.
+- Media key interception (`MediaKeysApplication`).
+- Last.fm scrobbler (`Scrobbler/`).
+- Dock menu / Now Playing widget (macOS GUI).
+
+### Operational / non-Cog gaps
+
 - **Linux bring-up** is untested — `meson.build` has the ALSA/Pulse
   paths wired but no one has run it on Linux yet.
 - **HTTP SSE over TLS**: we bind 127.0.0.1 only; put a reverse proxy
   in front for remote access.
+- **Sample-accurate seek through `ConverterNode`** — the resampler
+  tail isn't flushed on seek, so a ~93 ms pre-seek chunk may leak to
+  output during a seek-while-converting. Mostly inaudible but worth
+  closing.
+- **cpp-httplib empty-body POST**: `curl -X POST /stop` (no `-d`)
+  hangs until cpp-httplib's 5 s read timeout, then returns 400 and
+  the handler never runs. Always pass `-d ''` for empty-body POSTs.
 - **License resolution**: pending. Don't redistribute tuxedo until
   sorted.
 
 ## Related local repos
 
-- `/Users/kevin/src/Cog` — upstream Cog. Useful reference for porting
-  further decoders (`Cog/Plugins/*`), sources, and DSP nodes. Cog's
-  GitHub org is **losnoco** (not "losno").
+- `/Users/kevin/src/Cog` — upstream Cog. See "Continuing this project"
+  and "Port status" above for how to use it.
