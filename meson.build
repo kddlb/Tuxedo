@@ -30,8 +30,10 @@ if not flac_dep.found()
   endif
 endif
 
-# miniaudio — single-header, compiled into its own TU in src/output
+# Single-header vendored libraries.
 miniaudio_inc = include_directories('vendor/miniaudio')
+json_inc = include_directories('vendor/json', is_system: true)
+httplib_inc = include_directories('vendor/httplib', is_system: true)
 
 deps = [thread_dep, flac_dep]
 
@@ -69,13 +71,16 @@ core_sources = files(
   'src/plugin/input/flac_decoder.cpp',
   'src/plugin/input/miniaudio_decoder.cpp',
   'src/plugin/output/miniaudio_backend.cpp',
+  'src/ipc/controller.cpp',
+  'src/ipc/http_server.cpp',
+  'src/ipc/socket_server.cpp',
   'src/ipc/stdin_control.cpp',
 )
 
 tuxedod = executable(
   'tuxedod',
   core_sources + files('src/daemon/main.cpp'),
-  include_directories: [core_inc, miniaudio_inc],
+  include_directories: [core_inc, miniaudio_inc, json_inc, httplib_inc],
   dependencies: deps,
   install: true,
 )

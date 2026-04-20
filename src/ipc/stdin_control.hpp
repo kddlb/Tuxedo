@@ -1,13 +1,12 @@
-// stdin_control: line-based command parser driving a Player.
-// This is the MVP "IPC" layer. A socket-based variant will replace it.
+// stdin_control: human-friendly line-based dev console. NOT the real
+// IPC — that's the unix socket. This stays around for quick manual
+// testing and piped smoke tests.
 #pragma once
 
-#include "core/player.hpp"
+#include "ipc/controller.hpp"
 
 namespace tuxedo {
 
-// Reads lines from stdin, dispatches them to `player`. Returns when
-// stdin closes or a "quit" command is received.
-void run_stdin_control(Player &player);
+void run_stdin_control(Controller &controller);
 
 } // namespace tuxedo

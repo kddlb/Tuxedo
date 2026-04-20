@@ -1,6 +1,6 @@
 #include "ipc/stdin_control.hpp"
 
-#include <cstdio>
+#include <cctype>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -9,80 +9,102 @@ namespace tuxedo {
 
 namespace {
 
-void println_event(const PlayerEvent &ev) {
-	const char *kind = "?";
-	switch(ev.kind) {
-		case PlayerEvent::Kind::StatusChanged: kind = "status"; break;
-		case PlayerEvent::Kind::StreamBegan: kind = "began"; break;
-		case PlayerEvent::Kind::StreamEnded: kind = "ended"; break;
-		case PlayerEvent::Kind::Error: kind = "error"; break;
+// Build a Controller request object from a line-based command.
+// Returns an empty object if the line isn't a recognised command.
+json build_request(const std::string &line) {
+	std::istringstream iss(line);
+	std::string cmd;
+	iss >> cmd;
+	if(cmd.empty()) return {};
+
+	json req;
+	if(cmd == "quit" || cmd == "exit") {
+		req["op"] = "stop";
+		req["__quit"] = true;
+		return req;
 	}
-	std::cout << "event: " << kind << ' ' << status_name(ev.status);
-	if(!ev.url.empty()) std::cout << " url=" << ev.url;
-	if(!ev.message.empty()) std::cout << " msg=" << ev.message;
+	if(cmd == "play") {
+		std::string url;
+		std::getline(iss, url);
+		size_t i = 0;
+		while(i < url.size() && std::isspace(static_cast<unsigned char>(url[i]))) ++i;
+		url.erase(0, i);
+		if(url.empty()) return {};
+		req["op"] = "play";
+		req["url"] = url;
+		return req;
+	}
+	if(cmd == "pause" || cmd == "resume" || cmd == "stop" || cmd == "status") {
+		req["op"] = cmd;
+		return req;
+	}
+	if(cmd == "seek") {
+		double t = 0.0;
+		if(!(iss >> t)) return {};
+		req["op"] = "seek";
+		req["seconds"] = t;
+		return req;
+	}
+	if(cmd == "volume") {
+		double v = 1.0;
+		if(!(iss >> v)) return {};
+		req["op"] = "volume";
+		req["value"] = v;
+		return req;
+	}
+	return {};
+}
+
+void print_response(const json &resp) {
+	if(resp.value("ok", false)) {
+		if(resp.contains("state")) {
+			// It's a status response — print the detail line.
+			std::cout << "status " << resp["state"].get<std::string>()
+			          << " position=" << resp.value("position", 0.0)
+			          << " duration=" << resp.value("duration", 0.0)
+			          << " volume=" << resp.value("volume", 0.0)
+			          << " url=" << resp.value("url", std::string{})
+			          << '\n';
+		} else {
+			std::cout << "ok\n";
+		}
+	} else {
+		std::cout << "err " << resp.value("error", std::string{"unknown"}) << '\n';
+	}
+	std::cout.flush();
+}
+
+void print_event(const json &ev) {
+	// Match the previous stdin transport's event line style so existing
+	// smoke scripts keep working.
+	std::cout << "event: " << ev.value("event", std::string{"?"})
+	          << ' ' << ev.value("state", std::string{"unknown"});
+	if(ev.contains("url")) std::cout << " url=" << ev["url"].get<std::string>();
+	if(ev.contains("message")) std::cout << " msg=" << ev["message"].get<std::string>();
 	std::cout << '\n' << std::flush;
 }
 
-void reply_ok() { std::cout << "ok\n" << std::flush; }
-void reply_err(const std::string &m) { std::cout << "err " << m << '\n' << std::flush; }
-
 } // namespace
 
-void run_stdin_control(Player &player) {
-	player.set_event_callback(println_event);
+void run_stdin_control(Controller &ctl) {
+	auto token = ctl.subscribe(print_event);
 
 	std::string line;
 	while(std::getline(std::cin, line)) {
-		std::istringstream iss(line);
-		std::string cmd;
-		iss >> cmd;
-		if(cmd.empty()) continue;
-
-		if(cmd == "quit" || cmd == "exit") {
-			player.stop();
-			reply_ok();
-			return;
-		}
-		if(cmd == "play") {
-			std::string url;
-			std::getline(iss, url);
-			// Trim leading whitespace.
-			size_t i = 0;
-			while(i < url.size() && std::isspace(static_cast<unsigned char>(url[i]))) ++i;
-			url.erase(0, i);
-			if(url.empty()) { reply_err("play requires a path"); continue; }
-			if(!player.play(url)) reply_err("play failed");
-			else reply_ok();
+		json req = build_request(line);
+		if(req.is_null() || !req.is_object() || !req.contains("op")) {
+			if(!line.empty())
+				std::cout << "err unknown command\n" << std::flush;
 			continue;
 		}
-		if(cmd == "pause") { player.pause(); reply_ok(); continue; }
-		if(cmd == "resume") { player.resume(); reply_ok(); continue; }
-		if(cmd == "stop") { player.stop(); reply_ok(); continue; }
-		if(cmd == "seek") {
-			double t = 0.0;
-			if(!(iss >> t)) { reply_err("seek requires seconds"); continue; }
-			if(!player.seek_seconds(t)) reply_err("seek failed");
-			else reply_ok();
-			continue;
-		}
-		if(cmd == "volume") {
-			double v = 1.0;
-			if(!(iss >> v)) { reply_err("volume requires a number 0..1"); continue; }
-			player.set_volume(v);
-			reply_ok();
-			continue;
-		}
-		if(cmd == "status") {
-			std::cout << "status " << status_name(player.status())
-			          << " position=" << player.position_seconds()
-			          << " duration=" << player.duration_seconds()
-			          << " volume=" << player.volume()
-			          << " url=" << player.current_url()
-			          << '\n' << std::flush;
-			continue;
-		}
-		reply_err("unknown command: " + cmd);
+		const bool is_quit = req.value("__quit", false);
+		req.erase("__quit");
+		json resp = ctl.dispatch(req);
+		print_response(resp);
+		if(is_quit) break;
 	}
+
+	ctl.unsubscribe(token);
 }
 
 } // namespace tuxedo
