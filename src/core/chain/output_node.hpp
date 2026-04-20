@@ -8,6 +8,7 @@
 #include "plugin/output_backend.hpp"
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 
@@ -18,7 +19,25 @@ public:
 	OutputNode();
 	~OutputNode();
 
-	void set_previous(Node *p) { previous_ = p; }
+	void set_previous(Node *p) { previous_.store(p); }
+	Node *previous() const { return previous_.load(); }
+
+	// Arm the hot-swap slot: when `previous_` reaches end-of-stream and
+	// drains, the render callback atomically takes this pointer and makes
+	// it the new `previous_`, so track transitions are gapless. Safe to
+	// call at any time from any thread.
+	void set_next_source(Node *n) { next_source_.store(n); }
+	Node *next_source() const { return next_source_.load(); }
+
+	// Fires once, on the audio thread, when a track drained and no
+	// next_source was armed (i.e. genuine natural end of playback). The
+	// callback must be cheap and non-blocking — it's meant to wake a
+	// watchdog thread via condvar, not do real work.
+	void set_on_stream_consumed(std::function<void()> cb);
+
+	// Fires on the audio thread the instant a hot-swap happens —
+	// `previous_` went from chain A's tail to chain B's head. Also cheap.
+	void set_on_stream_advanced(std::function<void()> cb);
 
 	bool open(StreamFormat format);
 	void close();
@@ -48,7 +67,8 @@ public:
 	void render(float *dst, size_t frames);
 
 private:
-	Node *previous_ = nullptr;
+	std::atomic<Node *> previous_{nullptr};
+	std::atomic<Node *> next_source_{nullptr};
 	StreamFormat format_{};
 	std::unique_ptr<OutputBackend> backend_;
 
@@ -59,6 +79,11 @@ private:
 	// Holds the tail of a chunk we couldn't fully push in the last render.
 	std::mutex leftover_mtx_;
 	AudioChunk leftover_;
+
+	// Guarded by callbacks_mtx_; set only from non-audio threads.
+	std::mutex callbacks_mtx_;
+	std::function<void()> on_stream_consumed_;
+	std::function<void()> on_stream_advanced_;
 };
 
 } // namespace tuxedo

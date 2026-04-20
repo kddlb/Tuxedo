@@ -55,6 +55,13 @@ bool HttpServer::start() {
 	srv_->Post("/stop", wrap_op("stop"));
 	srv_->Post("/seek", wrap_op("seek"));
 	srv_->Post("/volume", wrap_op("volume"));
+	srv_->Post("/queue", wrap_op("queue"));
+	srv_->Post("/queue_clear", wrap_op("queue_clear"));
+	srv_->Post("/skip", wrap_op("skip"));
+	srv_->Get("/queue", [this](const httplib::Request &, httplib::Response &res) {
+		json req{{"op", "queue_list"}};
+		reply(res, ctl_.dispatch(req));
+	});
 
 	// Generic dispatch for anything else — body should be a full request.
 	srv_->Post("/rpc", [this](const httplib::Request &req, httplib::Response &res) {

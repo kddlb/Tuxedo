@@ -30,6 +30,8 @@ void OutputNode::close() {
 	}
 	frames_played_.store(0);
 	paused_.store(false);
+	previous_.store(nullptr);
+	next_source_.store(nullptr);
 	std::lock_guard<std::mutex> g(leftover_mtx_);
 	leftover_ = {};
 }
@@ -38,17 +40,23 @@ void OutputNode::start() {
 	if(backend_) backend_->start();
 }
 
-void OutputNode::pause() {
-	paused_.store(true);
-}
+void OutputNode::pause() { paused_.store(true); }
 
-void OutputNode::resume() {
-	paused_.store(false);
-}
+void OutputNode::resume() { paused_.store(false); }
 
 void OutputNode::flush_leftover() {
 	std::lock_guard<std::mutex> g(leftover_mtx_);
 	leftover_ = {};
+}
+
+void OutputNode::set_on_stream_consumed(std::function<void()> cb) {
+	std::lock_guard<std::mutex> g(callbacks_mtx_);
+	on_stream_consumed_ = std::move(cb);
+}
+
+void OutputNode::set_on_stream_advanced(std::function<void()> cb) {
+	std::lock_guard<std::mutex> g(callbacks_mtx_);
+	on_stream_advanced_ = std::move(cb);
 }
 
 double OutputNode::seconds_played() const {
@@ -56,11 +64,18 @@ double OutputNode::seconds_played() const {
 	return double(frames_played_.load()) / format_.sample_rate;
 }
 
+namespace {
+void copy_scaled(float *dst, const float *src, size_t samples, float vol) {
+	for(size_t i = 0; i < samples; ++i) dst[i] = src[i] * vol;
+}
+} // namespace
+
 void OutputNode::render(float *dst, size_t frames) {
 	const uint32_t ch = format_.channels;
 	const size_t total_samples = frames * ch;
 
-	if(paused_.load() || !previous_) {
+	Node *cur = previous_.load();
+	if(paused_.load() || !cur) {
 		std::memset(dst, 0, total_samples * sizeof(float));
 		return;
 	}
@@ -68,40 +83,46 @@ void OutputNode::render(float *dst, size_t frames) {
 	size_t filled = 0;
 	const float vol = static_cast<float>(volume_.load());
 
+	// Drain the stashed leftover fragment first.
 	{
 		std::lock_guard<std::mutex> g(leftover_mtx_);
 		if(!leftover_.empty()) {
-			// consume() trims leftover_ in place via remove_frames, so re-issue
-			// a simpler inline consumption here that leaves the remainder intact.
 			const size_t src_frames = leftover_.frame_count();
 			const size_t want = std::min(src_frames, frames - filled);
-			const float *sp = leftover_.samples().data();
-			float *dp = dst + filled * ch;
-			for(size_t i = 0; i < want * ch; ++i) dp[i] = sp[i] * vol;
+			copy_scaled(dst + filled * ch, leftover_.samples().data(), want * ch, vol);
 			filled += want;
-			if(want == src_frames) {
-				leftover_ = {};
-			} else {
-				AudioChunk head = leftover_.remove_frames(want);
-				(void)head;
-			}
+			if(want == src_frames) leftover_ = {};
+			else leftover_.remove_frames(want);
 		}
 	}
 
+	bool advanced_to_next = false;
+	bool hit_natural_end = false;
+
 	while(filled < frames) {
-		AudioChunk chunk = previous_->read_chunk(frames - filled);
-		if(chunk.empty()) break;
+		AudioChunk chunk = cur->read_chunk(frames - filled);
+		if(chunk.empty()) {
+			// Current source drained. Two possibilities:
+			//   (a) genuine underrun — leave silence.
+			//   (b) end-of-stream — try to hot-swap to the queued source.
+			if(!cur->end_of_stream()) break;
+
+			Node *nxt = next_source_.exchange(nullptr);
+			if(!nxt) { hit_natural_end = true; break; }
+
+			previous_.store(nxt);
+			cur = nxt;
+			advanced_to_next = true;
+			continue;
+		}
 
 		const size_t src_frames = chunk.frame_count();
 		const size_t want = std::min(src_frames, frames - filled);
-		const float *sp = chunk.samples().data();
-		float *dp = dst + filled * ch;
-		for(size_t i = 0; i < want * ch; ++i) dp[i] = sp[i] * vol;
+		copy_scaled(dst + filled * ch, chunk.samples().data(), want * ch, vol);
 		filled += want;
 
 		if(want < src_frames) {
-			AudioChunk head = chunk.remove_frames(want);
-			(void)head;
+			chunk.remove_frames(want);
 			std::lock_guard<std::mutex> g(leftover_mtx_);
 			leftover_ = std::move(chunk);
 		}
@@ -110,8 +131,21 @@ void OutputNode::render(float *dst, size_t frames) {
 	if(filled < frames) {
 		std::memset(dst + filled * ch, 0, (frames - filled) * ch * sizeof(float));
 	}
-
 	frames_played_.fetch_add(static_cast<int64_t>(filled));
+
+	// Fire notifications *outside* the audio hot path loop, but still on
+	// the audio thread. Callbacks are expected to be non-blocking
+	// (condvar notify_one is all they need to do).
+	if(advanced_to_next || hit_natural_end) {
+		std::function<void()> cb1, cb2;
+		{
+			std::lock_guard<std::mutex> g(callbacks_mtx_);
+			if(advanced_to_next) cb1 = on_stream_advanced_;
+			if(hit_natural_end) cb2 = on_stream_consumed_;
+		}
+		if(cb1) cb1();
+		if(cb2) cb2();
+	}
 }
 
 } // namespace tuxedo

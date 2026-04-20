@@ -22,13 +22,16 @@ public:
 	void request_stop();
 
 	InputNode *input() { return input_.get(); }
+	const InputNode *input() const { return input_.get(); }
 	Node *final_node() { return input_.get(); }
 
 	StreamFormat format() const { return format_; }
+	const std::string &url() const { return url_; }
 
 private:
 	std::unique_ptr<InputNode> input_;
 	StreamFormat format_{};
+	std::string url_;
 };
 
 } // namespace tuxedo

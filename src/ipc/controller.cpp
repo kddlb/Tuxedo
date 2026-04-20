@@ -77,11 +77,39 @@ json Controller::dispatch(const json &req) {
 		out["volume"] = player_.volume();
 		out["url"] = player_.current_url();
 		out["metadata"] = player_.current_metadata();
+		out["queue_length"] = player_.queue_length();
 		return out;
 	}
 	if(op == "metadata") {
 		json out = make_ok(req);
 		out["metadata"] = player_.current_metadata();
+		return out;
+	}
+	if(op == "queue") {
+		if(!req.contains("url") || !req["url"].is_string())
+			return make_err(req, "queue requires string `url`");
+		if(!player_.queue(req["url"].get<std::string>()))
+			return make_err(req, "queue failed");
+		return make_ok(req);
+	}
+	if(op == "queue_clear") { player_.queue_clear(); return make_ok(req); }
+	if(op == "skip") {
+		if(!player_.skip()) return make_err(req, "nothing to skip");
+		return make_ok(req);
+	}
+	if(op == "queue_list") {
+		json out = make_ok(req);
+		json arr = json::array();
+		for(const auto &e : player_.queue_snapshot()) {
+			json o;
+			o["url"] = e.url;
+			o["duration"] = e.duration_seconds;
+			o["sample_rate"] = e.format.sample_rate;
+			o["channels"] = e.format.channels;
+			o["metadata"] = e.metadata;
+			arr.push_back(std::move(o));
+		}
+		out["queue"] = std::move(arr);
 		return out;
 	}
 	return make_err(req, "unknown op: " + op);

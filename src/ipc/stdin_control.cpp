@@ -34,8 +34,21 @@ json build_request(const std::string &line) {
 		req["url"] = url;
 		return req;
 	}
-	if(cmd == "pause" || cmd == "resume" || cmd == "stop" || cmd == "status") {
+	if(cmd == "pause" || cmd == "resume" || cmd == "stop" || cmd == "status"
+	   || cmd == "metadata" || cmd == "queue_clear" || cmd == "queue_list"
+	   || cmd == "skip") {
 		req["op"] = cmd;
+		return req;
+	}
+	if(cmd == "queue") {
+		std::string url;
+		std::getline(iss, url);
+		size_t i = 0;
+		while(i < url.size() && std::isspace(static_cast<unsigned char>(url[i]))) ++i;
+		url.erase(0, i);
+		if(url.empty()) return {};
+		req["op"] = "queue";
+		req["url"] = url;
 		return req;
 	}
 	if(cmd == "seek") {

@@ -8,9 +8,11 @@ BufferChain::~BufferChain() { close(); }
 
 bool BufferChain::open(const std::string &url) {
 	close();
+	url_ = url;
 	input_ = std::make_unique<InputNode>();
 	if(!input_->open_url(url)) {
 		input_.reset();
+		url_.clear();
 		return false;
 	}
 	format_ = input_->properties().format;
@@ -24,6 +26,7 @@ void BufferChain::close() {
 		input_.reset();
 	}
 	format_ = {};
+	url_.clear();
 }
 
 void BufferChain::launch() {
