@@ -1,6 +1,6 @@
 #include "core/chain/output_node.hpp"
 
-#include "output/miniaudio_backend.hpp"
+#include "plugin/output/miniaudio_backend.hpp"
 
 #include <algorithm>
 #include <cstring>

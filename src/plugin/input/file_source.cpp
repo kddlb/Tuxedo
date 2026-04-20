@@ -1,4 +1,4 @@
-#include "plugin/file_source.hpp"
+#include "plugin/input/file_source.hpp"
 
 #include <cstdio>
 #include <string>

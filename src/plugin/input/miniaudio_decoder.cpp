@@ -1,4 +1,4 @@
-#include "plugin/miniaudio_decoder.hpp"
+#include "plugin/input/miniaudio_decoder.hpp"
 
 #include "miniaudio.h"
 

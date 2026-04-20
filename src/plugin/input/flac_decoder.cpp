@@ -1,4 +1,4 @@
-#include "plugin/flac_decoder.hpp"
+#include "plugin/input/flac_decoder.hpp"
 
 #include <FLAC/stream_decoder.h>
 

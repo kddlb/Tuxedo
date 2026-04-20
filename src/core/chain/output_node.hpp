@@ -5,7 +5,7 @@
 
 #include "core/audio_chunk.hpp"
 #include "core/chain/node.hpp"
-#include "output/backend.hpp"
+#include "plugin/output_backend.hpp"
 
 #include <atomic>
 #include <memory>

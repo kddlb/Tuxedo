@@ -65,10 +65,10 @@ core_sources = files(
   'src/core/chain/output_node.cpp',
   'src/core/chain/buffer_chain.cpp',
   'src/plugin/registry.cpp',
-  'src/plugin/file_source.cpp',
-  'src/plugin/flac_decoder.cpp',
-  'src/plugin/miniaudio_decoder.cpp',
-  'src/output/miniaudio_backend.cpp',
+  'src/plugin/input/file_source.cpp',
+  'src/plugin/input/flac_decoder.cpp',
+  'src/plugin/input/miniaudio_decoder.cpp',
+  'src/plugin/output/miniaudio_backend.cpp',
   'src/ipc/stdin_control.cpp',
 )
 

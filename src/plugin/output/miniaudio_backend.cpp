@@ -2,7 +2,7 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
-#include "output/miniaudio_backend.hpp"
+#include "plugin/output/miniaudio_backend.hpp"
 
 namespace tuxedo {
 

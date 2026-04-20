@@ -1,8 +1,8 @@
 #include "plugin/registry.hpp"
 
-#include "plugin/file_source.hpp"
-#include "plugin/flac_decoder.hpp"
-#include "plugin/miniaudio_decoder.hpp"
+#include "plugin/input/file_source.hpp"
+#include "plugin/input/flac_decoder.hpp"
+#include "plugin/input/miniaudio_decoder.hpp"
 
 #include <algorithm>
 #include <cctype>

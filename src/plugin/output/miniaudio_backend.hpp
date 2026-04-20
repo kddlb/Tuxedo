@@ -1,6 +1,6 @@
 #pragma once
 
-#include "output/backend.hpp"
+#include "plugin/output_backend.hpp"
 
 namespace tuxedo {
 
