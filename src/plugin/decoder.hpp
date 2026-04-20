@@ -5,6 +5,8 @@
 #include "core/audio_chunk.hpp"
 #include "plugin/source.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -31,6 +33,12 @@ public:
 
 	// Returns the frame actually seeked to, or -1 if unsupported/failed.
 	virtual int64_t seek(int64_t frame) = 0;
+
+	// Tag data (Vorbis comments / ID3 / etc) in the canonical shape
+	// documented at doc/metadata.md: lowercased keys, multi-value fields
+	// as JSON arrays, optional "album_art": {mime, data_b64}. Default is
+	// empty; decoders that don't surface tags (miniaudio) just inherit.
+	virtual nlohmann::json metadata() const { return nlohmann::json::object(); }
 };
 
 using DecoderPtr = std::unique_ptr<Decoder>;

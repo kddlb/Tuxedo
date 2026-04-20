@@ -7,6 +7,8 @@
 #include "core/chain/output_node.hpp"
 #include "core/status.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -19,12 +21,14 @@ struct PlayerEvent {
 		StatusChanged,
 		StreamBegan,
 		StreamEnded,
+		MetadataChanged,
 		Error,
 	};
 	Kind kind;
 	PlaybackStatus status = PlaybackStatus::Stopped;
 	std::string url;
 	std::string message;
+	nlohmann::json metadata = nlohmann::json::object();
 };
 
 using PlayerEventCallback = std::function<void(const PlayerEvent &)>;
@@ -49,6 +53,7 @@ public:
 	double position_seconds() const;
 	double duration_seconds() const;
 	std::string current_url() const;
+	nlohmann::json current_metadata() const;
 
 private:
 	void set_status(PlaybackStatus s);

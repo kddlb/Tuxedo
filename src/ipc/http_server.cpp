@@ -45,6 +45,10 @@ bool HttpServer::start() {
 		json req{{"op", "status"}};
 		reply(res, ctl_.dispatch(req));
 	});
+	srv_->Get("/metadata", [this](const httplib::Request &, httplib::Response &res) {
+		json req{{"op", "metadata"}};
+		reply(res, ctl_.dispatch(req));
+	});
 	srv_->Post("/play", wrap_op("play"));
 	srv_->Post("/pause", wrap_op("pause"));
 	srv_->Post("/resume", wrap_op("resume"));

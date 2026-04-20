@@ -39,7 +39,13 @@ bool Player::play(const std::string &url) {
 	}
 
 	set_status(PlaybackStatus::Playing);
-	emit({PlayerEvent::Kind::StreamBegan, PlaybackStatus::Playing, url, {}});
+
+	PlayerEvent began;
+	began.kind = PlayerEvent::Kind::StreamBegan;
+	began.status = PlaybackStatus::Playing;
+	began.url = url;
+	began.metadata = current_metadata();
+	emit(std::move(began));
 	return true;
 }
 
@@ -52,14 +58,26 @@ void Player::pause() {
 	std::lock_guard<std::mutex> g(mtx_);
 	if(output_) output_->pause();
 	status_ = PlaybackStatus::Paused;
-	if(cb_) cb_({PlayerEvent::Kind::StatusChanged, status_, current_url_, {}});
+	if(cb_) {
+		PlayerEvent e;
+		e.kind = PlayerEvent::Kind::StatusChanged;
+		e.status = status_;
+		e.url = current_url_;
+		cb_(e);
+	}
 }
 
 void Player::resume() {
 	std::lock_guard<std::mutex> g(mtx_);
 	if(output_) output_->resume();
 	status_ = PlaybackStatus::Playing;
-	if(cb_) cb_({PlayerEvent::Kind::StatusChanged, status_, current_url_, {}});
+	if(cb_) {
+		PlayerEvent e;
+		e.kind = PlayerEvent::Kind::StatusChanged;
+		e.status = status_;
+		e.url = current_url_;
+		cb_(e);
+	}
 }
 
 bool Player::seek_seconds(double seconds) {
@@ -112,12 +130,25 @@ std::string Player::current_url() const {
 	return current_url_;
 }
 
+nlohmann::json Player::current_metadata() const {
+	std::lock_guard<std::mutex> g(mtx_);
+	if(!chain_ || !chain_->input() || !chain_->input()->decoder())
+		return nlohmann::json::object();
+	return chain_->input()->decoder()->metadata();
+}
+
 void Player::set_status(PlaybackStatus s) {
+	std::string url;
 	{
 		std::lock_guard<std::mutex> g(mtx_);
 		status_ = s;
+		url = current_url_;
 	}
-	emit({PlayerEvent::Kind::StatusChanged, s, current_url(), {}});
+	PlayerEvent e;
+	e.kind = PlayerEvent::Kind::StatusChanged;
+	e.status = s;
+	e.url = url;
+	emit(std::move(e));
 }
 
 void Player::emit(PlayerEvent ev) {

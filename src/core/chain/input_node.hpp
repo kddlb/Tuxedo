@@ -20,6 +20,7 @@ public:
 	void close();
 
 	const DecoderProperties &properties() const { return props_; }
+	Decoder *decoder() const { return decoder_.get(); }
 
 	// Request a seek to `frame`; handled inside the worker between reads.
 	void request_seek(int64_t frame);

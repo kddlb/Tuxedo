@@ -9,6 +9,7 @@ const char *kind_name(PlayerEvent::Kind k) {
 		case PlayerEvent::Kind::StatusChanged: return "status_changed";
 		case PlayerEvent::Kind::StreamBegan: return "stream_began";
 		case PlayerEvent::Kind::StreamEnded: return "stream_ended";
+		case PlayerEvent::Kind::MetadataChanged: return "metadata_changed";
 		case PlayerEvent::Kind::Error: return "error";
 	}
 	return "unknown";
@@ -75,6 +76,12 @@ json Controller::dispatch(const json &req) {
 		out["duration"] = player_.duration_seconds();
 		out["volume"] = player_.volume();
 		out["url"] = player_.current_url();
+		out["metadata"] = player_.current_metadata();
+		return out;
+	}
+	if(op == "metadata") {
+		json out = make_ok(req);
+		out["metadata"] = player_.current_metadata();
 		return out;
 	}
 	return make_err(req, "unknown op: " + op);
@@ -98,6 +105,7 @@ void Controller::on_player_event(const PlayerEvent &ev) {
 	j["state"] = status_name(ev.status);
 	if(!ev.url.empty()) j["url"] = ev.url;
 	if(!ev.message.empty()) j["message"] = ev.message;
+	if(!ev.metadata.empty()) j["metadata"] = ev.metadata;
 	publish(j);
 }
 

@@ -1,12 +1,14 @@
 // FLAC decoder, ported from Cog's Plugins/Flac/FlacDecoder.m.
-// MVP scope: raw FLAC streams, any bit depth (8/16/24/32), stereo/multichannel,
-// float32 interleaved output. OggFLAC, metadata (Vorbis comments / pictures /
-// embedded cuesheets) and HDCD detection are deferred.
+// Scope: raw FLAC streams, any bit depth (8/16/24/32), stereo/multichannel,
+// float32 interleaved output, Vorbis-comment + embedded PICTURE metadata.
+// OggFLAC, embedded cuesheets, HDCD detection, and live metadata
+// (willChangeValueForKey style KVO for ICY streams) are deferred.
 #pragma once
 
 #include "plugin/decoder.hpp"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 // libFLAC's handle type is a typedef of an anonymous struct, so it
@@ -27,6 +29,8 @@ public:
 	bool read(AudioChunk &out, size_t max_frames) override;
 	int64_t seek(int64_t frame) override;
 
+	nlohmann::json metadata() const override;
+
 	// --- Accessors used by the C callback shims ---
 	Source *source() { return source_; }
 	bool end_of_stream() const { return end_of_stream_; }
@@ -43,6 +47,13 @@ public:
 	// Called from the metadata callback when STREAMINFO arrives.
 	void accept_streaminfo(uint32_t channels, uint32_t sample_rate,
 	                       uint32_t bits_per_sample, uint64_t total_samples);
+
+	// One Vorbis comment entry, with name/value already split and
+	// encoded as UTF-8 (libFLAC gives us raw bytes).
+	void accept_vorbis_entry(const char *entry, uint32_t length);
+
+	// An embedded PICTURE block. `data` is the raw image bytes.
+	void accept_picture(const char *mime, const uint8_t *data, size_t length);
 
 private:
 	void *dec_ = nullptr; // FLAC__StreamDecoder *
@@ -63,6 +74,15 @@ private:
 	size_t block_frames_consumed_ = 0;
 
 	int64_t current_frame_ = 0;
+
+	// Accumulated Vorbis comments. Each key maps to an array of values
+	// (single-valued tags still land in a one-element array, for
+	// uniformity with Cog's convention).
+	nlohmann::json vorbis_tags_ = nlohmann::json::object();
+
+	// Embedded album art, if any. Base64-encoded lazily in metadata().
+	std::string picture_mime_;
+	std::vector<uint8_t> picture_bytes_;
 };
 
 } // namespace tuxedo
