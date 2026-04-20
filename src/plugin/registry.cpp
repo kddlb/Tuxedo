@@ -3,6 +3,7 @@
 #include "plugin/input/file_source.hpp"
 #include "plugin/input/flac_decoder.hpp"
 #include "plugin/input/miniaudio_decoder.hpp"
+#include "plugin/input/opus_decoder.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -71,6 +72,9 @@ void register_builtin_plugins() {
 
 	// libFLAC takes over .flac — lossless path, more accurate metadata later.
 	r.register_decoder("flac", [] { return DecoderPtr(new FlacDecoder()); });
+
+	// libopusfile for .opus — native Vorbis-comment metadata + R128 gains.
+	r.register_decoder("opus", [] { return DecoderPtr(new OpusDecoder()); });
 }
 
 } // namespace tuxedo

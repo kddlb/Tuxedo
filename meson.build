@@ -30,12 +30,32 @@ if not flac_dep.found()
   endif
 endif
 
+# libopusfile — same Homebrew-keg-only pattern as libFLAC.
+opusfile_dep = dependency('opusfile', required: false)
+if not opusfile_dep.found()
+  brew_opus = '/opt/homebrew/opt/opusfile'
+  opusfile_lib = cxx.find_library('opusfile', dirs: [brew_opus + '/lib'], required: false)
+  if opusfile_lib.found()
+    # opusfile's headers live under opus/ in the Homebrew bottle; add both roots.
+    opusfile_dep = declare_dependency(
+      include_directories: [
+        include_directories(brew_opus + '/include/opus', is_system: true),
+        include_directories('/opt/homebrew/opt/opus/include/opus', is_system: true),
+        include_directories('/opt/homebrew/opt/libogg/include', is_system: true),
+      ],
+      dependencies: [opusfile_lib],
+    )
+  else
+    error('libopusfile not found — install via `brew install opusfile` or set PKG_CONFIG_PATH')
+  endif
+endif
+
 # Single-header vendored libraries.
 miniaudio_inc = include_directories('vendor/miniaudio')
 json_inc = include_directories('vendor/json', is_system: true)
 httplib_inc = include_directories('vendor/httplib', is_system: true)
 
-deps = [thread_dep, flac_dep]
+deps = [thread_dep, flac_dep, opusfile_dep]
 
 host = host_machine.system()
 if host == 'darwin'
@@ -70,6 +90,7 @@ core_sources = files(
   'src/plugin/input/file_source.cpp',
   'src/plugin/input/flac_decoder.cpp',
   'src/plugin/input/miniaudio_decoder.cpp',
+  'src/plugin/input/opus_decoder.cpp',
   'src/plugin/output/miniaudio_backend.cpp',
   'src/ipc/controller.cpp',
   'src/ipc/http_server.cpp',
