@@ -1,11 +1,15 @@
-// BufferChain: owns an InputNode and (eventually) any intermediate
-// nodes. Mirrors Cog's BufferChain. MVP has no converter node because
-// MiniaudioDecoder already emits float32 at the output format.
+// BufferChain: owns an InputNode and a ConverterNode that adapts its
+// output to whatever format the OutputNode currently wants. Mirrors
+// Cog's BufferChain. The converter runs in identity passthrough when
+// input and target formats match, so the same-format fast path stays
+// free of resampling overhead.
 #pragma once
 
+#include "core/chain/converter_node.hpp"
 #include "core/chain/input_node.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace tuxedo {
@@ -18,20 +22,33 @@ public:
 	bool open(const std::string &url);
 	void close();
 
+	// Configure the converter's target format. Pass std::nullopt (the
+	// default) to keep it in identity passthrough at the input's native
+	// format. Must be called before launch().
+	void retarget(std::optional<StreamFormat> target);
+
+	// Orchestrate a seek across both input and converter: clears both
+	// ring buffers, resets the resampler's internal state, and tells the
+	// input decoder where to resume.
+	void seek(int64_t frame);
+
 	void launch();
 	void request_stop();
+	bool launched() const { return launched_; }
 
 	InputNode *input() { return input_.get(); }
 	const InputNode *input() const { return input_.get(); }
-	Node *final_node() { return input_.get(); }
+	Node *final_node() { return converter_.get(); }
 
 	StreamFormat format() const { return format_; }
 	const std::string &url() const { return url_; }
 
 private:
 	std::unique_ptr<InputNode> input_;
+	std::unique_ptr<ConverterNode> converter_;
 	StreamFormat format_{};
 	std::string url_;
+	bool launched_ = false;
 };
 
 } // namespace tuxedo

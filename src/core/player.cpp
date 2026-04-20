@@ -50,7 +50,6 @@ bool Player::play(const std::string &url) {
 		emit({PlayerEvent::Kind::Error, PlaybackStatus::Stopped, url, "open failed", {}});
 		return false;
 	}
-	chain->launch();
 
 	{
 		std::lock_guard<std::mutex> g(mtx_);
@@ -80,7 +79,6 @@ bool Player::queue(const std::string &url) {
 		emit({PlayerEvent::Kind::Error, status(), url, "queue open failed", {}});
 		return false;
 	}
-	chain->launch();
 
 	bool needs_start = false;
 	{
@@ -200,11 +198,14 @@ bool Player::seek_seconds(double seconds) {
 	if(!chain_ || !output_) return false;
 	auto fmt = output_->format();
 	if(!fmt.valid()) return false;
-	int64_t frame = static_cast<int64_t>(seconds * fmt.sample_rate);
-	chain_->input()->request_seek(frame);
-	chain_->input()->flush_buffer();
+	// Seek in the input's native frame rate, not the output rate —
+	// otherwise a 48 kHz output playing a 44.1 kHz source would request
+	// a frame offset past the end of the file.
+	auto input_fmt = chain_->format();
+	int64_t frame = static_cast<int64_t>(seconds * input_fmt.sample_rate);
+	chain_->seek(frame);
 	output_->flush_leftover();
-	output_->set_position_frames(frame);
+	output_->set_position_frames(static_cast<int64_t>(seconds * fmt.sample_rate));
 	return true;
 }
 
@@ -271,6 +272,21 @@ bool Player::start_head_locked() {
 	auto chain = std::move(queue_.front());
 	queue_.pop_front();
 
+	// If the chain was pre-launched as an armed-next under the previous
+	// output format, its converter captured a stale target; reopen so
+	// we can retarget cleanly at the new device's native format.
+	if(chain->launched()) {
+		std::string url = chain->url();
+		chain->close();
+		if(!chain->open(url)) return false;
+	}
+
+	// Head of playback — open the device at the track's native format
+	// and run the chain's converter in identity passthrough. Queued
+	// followers will retarget to this same format when they're armed.
+	chain->retarget(std::nullopt);
+	chain->launch();
+
 	auto output = std::make_unique<OutputNode>();
 	if(!output->open(chain->format())) return false;
 
@@ -305,10 +321,12 @@ void Player::maybe_arm_next_locked() {
 	if(!output_ || queue_.empty()) return;
 	auto &next = queue_.front();
 	if(!next) return;
-	if(next->format() != output_->format()) {
-		// Format mismatch — don't hot-swap; watchdog will teardown+reopen.
-		output_->set_next_source(nullptr);
-		return;
+	// First arm: configure the chain's converter for the current output
+	// format and launch its workers so it pre-buffers while the current
+	// track plays. Subsequent calls short-circuit via launched().
+	if(!next->launched()) {
+		next->retarget(output_->format());
+		next->launch();
 	}
 	output_->set_next_source(next->final_node());
 }
@@ -329,7 +347,9 @@ void Player::watchdog_loop() {
 
 		if(advanced) {
 			// Hot-swap happened — pop the queue front (it's now active),
-			// emit events, arm the *new* next.
+			// emit events, arm the *new* next. An advance subsumes any
+			// consumed flag that races with it (see `else if` below);
+			// the new track's arrival is the end of the old one.
 			std::unique_ptr<BufferChain> old_chain;
 			std::string old_url, new_url;
 			nlohmann::json new_meta;
@@ -366,9 +386,10 @@ void Player::watchdog_loop() {
 			emit(std::move(began));
 		}
 
-		if(consumed) {
-			// True end-of-playback with no queue (or format mismatch that we
-			// haven't handled yet). For MVP, treat as natural stop.
+		else if(consumed) {
+			// True end-of-playback with no armed next. Either the queue is
+			// empty (natural stop), or a queue() call lost the race with
+			// drain (rare — fall back to teardown + restart at new head).
 			bool has_queue = false;
 			std::string finished_url;
 			{
@@ -384,7 +405,7 @@ void Player::watchdog_loop() {
 				emit(std::move(ended));
 				stop();
 			} else {
-				// Format mismatch path: teardown + start head.
+				// Late-queue race: teardown + restart at new head.
 				std::unique_ptr<BufferChain> old_chain;
 				std::string old_url;
 				{

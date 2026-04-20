@@ -85,6 +85,7 @@ core_sources = files(
   'src/core/chain/node.cpp',
   'src/core/chain/input_node.cpp',
   'src/core/chain/output_node.cpp',
+  'src/core/chain/converter_node.cpp',
   'src/core/chain/buffer_chain.cpp',
   'src/plugin/registry.cpp',
   'src/plugin/input/file_source.cpp',
