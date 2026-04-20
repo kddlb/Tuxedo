@@ -3,7 +3,9 @@
 #include "plugin/input/file_source.hpp"
 #include "plugin/input/flac_decoder.hpp"
 #include "plugin/input/miniaudio_decoder.hpp"
+#include "plugin/input/mp3_decoder.hpp"
 #include "plugin/input/opus_decoder.hpp"
+#include "plugin/input/vorbis_decoder.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -64,17 +66,29 @@ void register_builtin_plugins() {
 	auto &r = PluginRegistry::instance();
 	r.register_source("file", [] { return SourcePtr(new FileSource()); });
 
-	// miniaudio covers mp3/wav/vorbis for the MVP.
+	// miniaudio handles the WAV fallback. WAV has no standardised
+	// tag container worth reading, so an empty metadata() is fine there.
 	auto ma_factory = [] { return DecoderPtr(new MiniaudioDecoder()); };
-	for(const char *ext : {"mp3", "wav", "wave", "ogg", "oga"}) {
+	for(const char *ext : {"wav", "wave"}) {
 		r.register_decoder(ext, ma_factory);
 	}
 
-	// libFLAC takes over .flac — lossless path, more accurate metadata later.
+	// libFLAC takes over .flac — lossless path, Vorbis-comment metadata.
 	r.register_decoder("flac", [] { return DecoderPtr(new FlacDecoder()); });
 
 	// libopusfile for .opus — native Vorbis-comment metadata + R128 gains.
 	r.register_decoder("opus", [] { return DecoderPtr(new OpusDecoder()); });
+
+	// libvorbisfile for Ogg Vorbis — Vorbis-comment metadata +
+	// METADATA_BLOCK_PICTURE album art. .oga routes here too.
+	auto vorbis_factory = [] { return DecoderPtr(new VorbisDecoder()); };
+	for(const char *ext : {"ogg", "oga"}) {
+		r.register_decoder(ext, vorbis_factory);
+	}
+
+	// miniaudio/dr_mp3 for MP3 audio + libid3tag for ID3v1/v2 tags,
+	// including APIC album art and TXXX ReplayGain entries.
+	r.register_decoder("mp3", [] { return DecoderPtr(new Mp3Decoder()); });
 }
 
 } // namespace tuxedo

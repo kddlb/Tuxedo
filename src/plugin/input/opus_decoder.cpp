@@ -1,5 +1,7 @@
 #include "plugin/input/opus_decoder.hpp"
 
+#include "plugin/input/vorbis_common.hpp"
+
 #include <opusfile.h>
 
 #include <algorithm>
@@ -49,43 +51,6 @@ const int kChmap[8][8] = {
     {0, 2, 1, 5, 6, 4, 3},       // 6.1
     {0, 2, 1, 6, 7, 4, 5, 3},    // 7.1
 };
-
-std::string lowercase(const std::string &s) {
-	std::string out = s;
-	std::transform(out.begin(), out.end(), out.begin(),
-	               [](unsigned char c) { return std::tolower(c); });
-	return out;
-}
-
-std::string canonicalise_tag(const std::string &lower_name) {
-	if(lower_name == "lyrics" || lower_name == "unsynced lyrics") return "unsyncedlyrics";
-	if(lower_name == "comments:itunnorm") return "soundcheck";
-	return lower_name;
-}
-
-std::string base64_encode(const uint8_t *data, size_t len) {
-	static const char tbl[] =
-	    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-	std::string out;
-	out.reserve((len + 2) / 3 * 4);
-	size_t i = 0;
-	for(; i + 2 < len; i += 3) {
-		uint32_t v = (uint32_t(data[i]) << 16) | (uint32_t(data[i + 1]) << 8) | data[i + 2];
-		out.push_back(tbl[(v >> 18) & 0x3F]);
-		out.push_back(tbl[(v >> 12) & 0x3F]);
-		out.push_back(tbl[(v >> 6) & 0x3F]);
-		out.push_back(tbl[v & 0x3F]);
-	}
-	if(i < len) {
-		uint32_t v = uint32_t(data[i]) << 16;
-		if(i + 1 < len) v |= uint32_t(data[i + 1]) << 8;
-		out.push_back(tbl[(v >> 18) & 0x3F]);
-		out.push_back(tbl[(v >> 12) & 0x3F]);
-		out.push_back(i + 1 < len ? tbl[(v >> 6) & 0x3F] : '=');
-		out.push_back('=');
-	}
-	return out;
-}
 
 } // namespace
 
@@ -186,11 +151,11 @@ void OpusDecoder::parse_tags() {
 
 void OpusDecoder::accept_vorbis_entry(const char *name, size_t name_len,
                                       const char *value, size_t value_len) {
-	std::string key = lowercase(std::string(name, name_len));
-	std::string val(value, value_len);
-
+	// Pre-filter the METADATA_BLOCK_PICTURE side-channel before falling
+	// through to the shared tag accumulator (which otherwise drops it).
+	std::string key = vorbis_common::lowercase(std::string(name, name_len));
 	if(key == "metadata_block_picture") {
-		// Base64-encoded METADATA_BLOCK_PICTURE. Defer to libopusfile.
+		std::string val(value, value_len);
 		OpusPictureTag pic;
 		opus_picture_tag_init(&pic);
 		if(opus_picture_tag_parse(&pic, val.c_str()) == 0) {
@@ -204,15 +169,7 @@ void OpusDecoder::accept_vorbis_entry(const char *name, size_t name_len,
 		opus_picture_tag_clear(&pic);
 		return;
 	}
-	if(key == "waveformatextensible_channel_mask") return; // side-channel only
-
-	key = canonicalise_tag(key);
-	auto it = vorbis_tags_.find(key);
-	if(it == vorbis_tags_.end()) {
-		vorbis_tags_[key] = nlohmann::json::array({std::move(val)});
-	} else {
-		it->push_back(std::move(val));
-	}
+	vorbis_common::accept_tag(vorbis_tags_, name, name_len, value, value_len);
 }
 
 bool OpusDecoder::read(AudioChunk &out, size_t max_frames) {
@@ -275,7 +232,7 @@ nlohmann::json OpusDecoder::metadata() const {
 	if(!picture_bytes_.empty()) {
 		out["album_art"] = {
 		    {"mime", picture_mime_},
-		    {"data_b64", base64_encode(picture_bytes_.data(), picture_bytes_.size())},
+		    {"data_b64", vorbis_common::base64_encode(picture_bytes_.data(), picture_bytes_.size())},
 		};
 	}
 

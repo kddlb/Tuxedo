@@ -1,5 +1,7 @@
 #include "plugin/input/flac_decoder.hpp"
 
+#include "plugin/input/vorbis_common.hpp"
+
 #include <FLAC/stream_decoder.h>
 
 #include <algorithm>
@@ -256,72 +258,9 @@ int64_t FlacDecoder::seek(int64_t frame) {
 
 // --- Metadata ---
 
-namespace {
-
-std::string lowercase(const std::string &s) {
-	std::string out = s;
-	std::transform(out.begin(), out.end(), out.begin(),
-	               [](unsigned char c) { return std::tolower(c); });
-	return out;
-}
-
-// Cog's tag-name canonicalisations. Applied after lowercasing.
-std::string canonicalise_tag(const std::string &lower_name) {
-	if(lower_name == "lyrics" || lower_name == "unsynced lyrics") return "unsyncedlyrics";
-	if(lower_name == "comments:itunnorm") return "soundcheck";
-	return lower_name;
-}
-
-std::string base64_encode(const uint8_t *data, size_t len) {
-	static const char tbl[] =
-	    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-	std::string out;
-	out.reserve((len + 2) / 3 * 4);
-	size_t i = 0;
-	for(; i + 2 < len; i += 3) {
-		uint32_t v = (uint32_t(data[i]) << 16) | (uint32_t(data[i + 1]) << 8) | data[i + 2];
-		out.push_back(tbl[(v >> 18) & 0x3F]);
-		out.push_back(tbl[(v >> 12) & 0x3F]);
-		out.push_back(tbl[(v >> 6) & 0x3F]);
-		out.push_back(tbl[v & 0x3F]);
-	}
-	if(i < len) {
-		uint32_t v = uint32_t(data[i]) << 16;
-		if(i + 1 < len) v |= uint32_t(data[i + 1]) << 8;
-		out.push_back(tbl[(v >> 18) & 0x3F]);
-		out.push_back(tbl[(v >> 12) & 0x3F]);
-		out.push_back(i + 1 < len ? tbl[(v >> 6) & 0x3F] : '=');
-		out.push_back('=');
-	}
-	return out;
-}
-
-} // namespace
-
 void FlacDecoder::accept_vorbis_entry(const char *entry, uint32_t length) {
 	// Entries are "NAME=VALUE", UTF-8 per the Vorbis spec.
-	const char *eq = static_cast<const char *>(std::memchr(entry, '=', length));
-	if(!eq) return;
-
-	std::string name(entry, static_cast<size_t>(eq - entry));
-	std::string value(eq + 1, length - static_cast<size_t>(eq - entry) - 1);
-
-	std::string key = lowercase(name);
-
-	// Side-channel: channel-mask hex goes to DecoderProperties, not metadata.
-	if(key == "waveformatextensible_channel_mask") {
-		// Parse "0xHEX". Stashed for future use; not surfaced yet.
-		return;
-	}
-
-	key = canonicalise_tag(key);
-
-	auto it = vorbis_tags_.find(key);
-	if(it == vorbis_tags_.end()) {
-		vorbis_tags_[key] = nlohmann::json::array({std::move(value)});
-	} else {
-		it->push_back(std::move(value));
-	}
+	vorbis_common::accept_entry(vorbis_tags_, entry, length);
 }
 
 void FlacDecoder::accept_picture(const char *mime, const uint8_t *data, size_t length) {
@@ -338,7 +277,7 @@ nlohmann::json FlacDecoder::metadata() const {
 	if(!picture_bytes_.empty()) {
 		out["album_art"] = {
 		    {"mime", picture_mime_},
-		    {"data_b64", base64_encode(picture_bytes_.data(), picture_bytes_.size())},
+		    {"data_b64", vorbis_common::base64_encode(picture_bytes_.data(), picture_bytes_.size())},
 		};
 	}
 	return out;

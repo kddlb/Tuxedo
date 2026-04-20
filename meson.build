@@ -50,12 +50,48 @@ if not opusfile_dep.found()
   endif
 endif
 
+# libvorbisfile — same Homebrew-keg-only pattern. Pulls in libvorbis
+# and libogg for symbols.
+vorbisfile_dep = dependency('vorbisfile', required: false)
+if not vorbisfile_dep.found()
+  brew_vorbis = '/opt/homebrew/opt/libvorbis'
+  vorbisfile_lib = cxx.find_library('vorbisfile', dirs: [brew_vorbis + '/lib'], required: false)
+  vorbis_lib = cxx.find_library('vorbis', dirs: [brew_vorbis + '/lib'], required: false)
+  ogg_lib = cxx.find_library('ogg', dirs: ['/opt/homebrew/opt/libogg/lib'], required: false)
+  if vorbisfile_lib.found() and vorbis_lib.found() and ogg_lib.found()
+    vorbisfile_dep = declare_dependency(
+      include_directories: [
+        include_directories(brew_vorbis + '/include', is_system: true),
+        include_directories('/opt/homebrew/opt/libogg/include', is_system: true),
+      ],
+      dependencies: [vorbisfile_lib, vorbis_lib, ogg_lib],
+    )
+  else
+    error('libvorbisfile not found — install via `brew install libvorbis` or set PKG_CONFIG_PATH')
+  endif
+endif
+
+# libid3tag — Homebrew keg-only, no pkg-config file in older versions.
+id3tag_dep = dependency('id3tag', required: false)
+if not id3tag_dep.found()
+  brew_id3tag = '/opt/homebrew/opt/libid3tag'
+  id3tag_lib = cxx.find_library('id3tag', dirs: [brew_id3tag + '/lib'], required: false)
+  if id3tag_lib.found()
+    id3tag_dep = declare_dependency(
+      include_directories: include_directories(brew_id3tag + '/include', is_system: true),
+      dependencies: [id3tag_lib],
+    )
+  else
+    error('libid3tag not found — install via `brew install libid3tag` or set PKG_CONFIG_PATH')
+  endif
+endif
+
 # Single-header vendored libraries.
 miniaudio_inc = include_directories('vendor/miniaudio')
 json_inc = include_directories('vendor/json', is_system: true)
 httplib_inc = include_directories('vendor/httplib', is_system: true)
 
-deps = [thread_dep, flac_dep, opusfile_dep]
+deps = [thread_dep, flac_dep, opusfile_dep, vorbisfile_dep, id3tag_dep]
 
 host = host_machine.system()
 if host == 'darwin'
@@ -91,7 +127,10 @@ core_sources = files(
   'src/plugin/input/file_source.cpp',
   'src/plugin/input/flac_decoder.cpp',
   'src/plugin/input/miniaudio_decoder.cpp',
+  'src/plugin/input/mp3_decoder.cpp',
   'src/plugin/input/opus_decoder.cpp',
+  'src/plugin/input/vorbis_common.cpp',
+  'src/plugin/input/vorbis_decoder.cpp',
   'src/plugin/output/miniaudio_backend.cpp',
   'src/ipc/controller.cpp',
   'src/ipc/http_server.cpp',
