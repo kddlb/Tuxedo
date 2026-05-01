@@ -65,6 +65,12 @@ json build_request(const std::string &line) {
 		req["value"] = v;
 		return req;
 	}
+	if(cmd == "replaygain") {
+		req["op"] = "replaygain";
+		std::string mode;
+		if(iss >> mode) req["mode"] = mode;
+		return req;
+	}
 	return {};
 }
 
@@ -76,8 +82,11 @@ void print_response(const json &resp) {
 			          << " position=" << resp.value("position", 0.0)
 			          << " duration=" << resp.value("duration", 0.0)
 			          << " volume=" << resp.value("volume", 0.0)
+			          << " replaygain=" << resp.value("replaygain_mode", std::string{"off"})
 			          << " url=" << resp.value("url", std::string{})
 			          << '\n';
+		} else if(resp.contains("mode")) {
+			std::cout << "replaygain " << resp["mode"].get<std::string>() << '\n';
 		} else {
 			std::cout << "ok\n";
 		}

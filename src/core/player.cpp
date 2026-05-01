@@ -20,6 +20,12 @@ double duration_of_chain(const BufferChain *c) {
 	return double(total) / fmt.sample_rate;
 }
 
+nlohmann::json metadata_from_chain_unlocked(const BufferChain *c) {
+	if(!c || !c->input() || !c->input()->decoder())
+		return nlohmann::json::object();
+	return c->input()->decoder()->metadata();
+}
+
 } // namespace
 
 Player::Player() {
@@ -215,6 +221,20 @@ void Player::set_volume(double v) {
 	if(output_) output_->set_volume(v);
 }
 
+void Player::set_replaygain_mode(ReplayGainMode mode) {
+	std::lock_guard<std::mutex> g(mtx_);
+	replaygain_mode_ = mode;
+	if(chain_) apply_replaygain_locked(chain_.get());
+	for(auto &queued : queue_) {
+		if(queued) apply_replaygain_locked(queued.get());
+	}
+}
+
+ReplayGainMode Player::replaygain_mode() const {
+	std::lock_guard<std::mutex> g(mtx_);
+	return replaygain_mode_;
+}
+
 double Player::volume() const {
 	std::lock_guard<std::mutex> g(mtx_);
 	return desired_volume_;
@@ -242,7 +262,7 @@ std::string Player::current_url() const {
 
 nlohmann::json Player::current_metadata() const {
 	std::lock_guard<std::mutex> g(mtx_);
-	return metadata_from_chain(chain_.get());
+	return metadata_from_chain_unlocked(chain_.get());
 }
 
 size_t Player::queue_length() const {
@@ -267,6 +287,23 @@ std::vector<Player::QueueEntry> Player::queue_snapshot() const {
 	return out;
 }
 
+void Player::attach_metadata_callback_locked() {
+	if(!chain_ || !chain_->input()) return;
+	InputNode *active_input = chain_->input();
+	active_input->set_metadata_changed_callback([this, active_input] {
+		PlayerEvent ev;
+		{
+			std::lock_guard<std::mutex> g(mtx_);
+			if(!chain_ || chain_->input() != active_input) return;
+			ev.kind = PlayerEvent::Kind::MetadataChanged;
+			ev.status = status_;
+			ev.url = current_url_;
+			ev.metadata = metadata_from_chain_unlocked(chain_.get());
+		}
+		emit(std::move(ev));
+	});
+}
+
 bool Player::start_head_locked() {
 	// queue_ must be non-empty; mtx_ held.
 	auto chain = std::move(queue_.front());
@@ -285,6 +322,7 @@ bool Player::start_head_locked() {
 	// and run the chain's converter in identity passthrough. Queued
 	// followers will retarget to this same format when they're armed.
 	chain->retarget(std::nullopt);
+	apply_replaygain_locked(chain.get());
 	chain->launch();
 
 	auto output = std::make_unique<OutputNode>();
@@ -312,6 +350,7 @@ bool Player::start_head_locked() {
 	current_url_ = chain->url();
 	chain_ = std::move(chain);
 	output_ = std::move(output);
+	attach_metadata_callback_locked();
 
 	maybe_arm_next_locked();
 	return true;
@@ -326,9 +365,16 @@ void Player::maybe_arm_next_locked() {
 	// track plays. Subsequent calls short-circuit via launched().
 	if(!next->launched()) {
 		next->retarget(output_->format());
+		apply_replaygain_locked(next.get());
 		next->launch();
 	}
 	output_->set_next_source(next->final_node());
+}
+
+void Player::apply_replaygain_locked(BufferChain *chain) {
+	if(!chain) return;
+	chain->set_gain(replaygain_scale_for_metadata(
+	    metadata_from_chain_unlocked(chain), replaygain_mode_));
 }
 
 void Player::watchdog_loop() {
@@ -361,6 +407,7 @@ void Player::watchdog_loop() {
 					queue_.pop_front();
 					old_url = current_url_;
 					current_url_ = chain_ ? chain_->url() : std::string{};
+					attach_metadata_callback_locked();
 				}
 				new_meta = metadata_from_chain(chain_.get());
 				new_url = current_url_;

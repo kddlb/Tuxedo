@@ -53,6 +53,10 @@ void BufferChain::seek(int64_t frame) {
 	input_->flush_buffer();
 }
 
+void BufferChain::set_gain(float gain) {
+	if(converter_) converter_->set_gain(gain);
+}
+
 void BufferChain::launch() {
 	if(launched_) return;
 	if(input_) input_->launch();

@@ -21,9 +21,11 @@ public:
 
 	void register_source(const std::string &scheme, SourceFactory f);
 	void register_decoder(const std::string &ext, DecoderFactory f);
+	void register_fallback_decoder(DecoderFactory f);
 
 	SourcePtr source_for_url(const std::string &url);
 	DecoderPtr decoder_for_extension(const std::string &ext);
+	std::vector<DecoderPtr> fallback_decoders();
 
 	static std::string extension_of(const std::string &path);
 	static std::string scheme_of(const std::string &url);
@@ -32,6 +34,7 @@ private:
 	PluginRegistry() = default;
 	std::unordered_map<std::string, SourceFactory> sources_;
 	std::unordered_map<std::string, DecoderFactory> decoders_;
+	std::vector<DecoderFactory> fallback_decoders_;
 };
 
 // Register the built-in MVP plugins (file source + miniaudio decoder).

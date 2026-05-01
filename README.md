@@ -42,6 +42,7 @@ Requests are JSON objects. `id` is optional and echoed on the response.
 {"op": "stop"}
 {"op": "seek", "seconds": 30.5}
 {"op": "volume", "value": 0.5}
+{"op": "replaygain", "mode": "album_peak"}
 {"op": "status"}
 ```
 
@@ -51,7 +52,7 @@ Responses:
 {"id": 1, "ok": true}
 {"id": 1, "ok": false, "error": "open failed"}
 {"id": 1, "ok": true, "state": "playing", "position": 12.3,
- "duration": 156.0, "volume": 0.5, "url": "..."}
+ "duration": 156.0, "volume": 0.5, "replaygain_mode": "album_peak", "url": "..."}
 ```
 
 Async events (socket and stdin subscribers; HTTP clients get the same
@@ -60,6 +61,8 @@ stream via `GET /events` as Server-Sent Events):
 ```json
 {"event": "status_changed", "state": "playing", "url": "..."}
 {"event": "stream_began",   "state": "playing", "url": "..."}
+{"event": "metadata_changed", "state": "playing", "url": "...",
+ "metadata": {"artist": ["..."], "title": ["..."]}}
 {"event": "stream_ended",   "state": "stopped", "url": "..."}
 {"event": "error",          "state": "stopped", "message": "..."}
 ```
@@ -69,6 +72,7 @@ stream via `GET /events` as Server-Sent Events):
 ```
 GET  /status
 GET  /metadata
+GET  /replaygain
 GET  /queue
 GET  /events        text/event-stream; `data: <json>\n\n` per event,
                     `:\n\n` heartbeats every 15s of idle.
@@ -81,6 +85,7 @@ POST /resume
 POST /stop
 POST /seek          body: {"seconds": N}
 POST /volume        body: {"value": 0..1}
+POST /replaygain    body: {"mode": "off|track|track_peak|album|album_peak|soundcheck"}
 POST /rpc           body: full request object
 ```
 
@@ -88,6 +93,7 @@ POST /rpc           body: full request object
 
 ```
 volume 0.5
+replaygain album_peak
 play /path/to/file.flac
 pause
 resume
@@ -99,15 +105,32 @@ quit
 
 ## Supported formats
 
-MP3, WAV, Ogg Vorbis via miniaudio; FLAC via libFLAC; Opus via
-libopusfile. More decoders (WavPack, Musepack, …) will be ported
-from Cog as the `Decoder` ABI stabilises.
+- Sources: local files plus `http://` / `https://` streams.
+- Native decoders: FLAC via libFLAC, Opus via libopusfile, Ogg Vorbis
+  via libvorbisfile, MP3 and WAV via miniaudio/libid3tag.
+- FFmpeg fallback: additional containers/codecs such as AAC / M4A and
+  other formats without a dedicated native decoder.
+
+ReplayGain is applied in the playback chain, with daemon modes:
+`off`, `track`, `track_peak`, `album`, `album_peak`, and `soundcheck`.
+Default is `album_peak`.
 
 ## Build dependencies
 
 - Meson + Ninja + a C++17 compiler.
 - `libFLAC` (`brew install flac`).
 - `libopusfile` (`brew install opusfile`).
+- `libvorbisfile` / `libvorbis`.
+- `libid3tag`.
+- `libcurl`.
+- FFmpeg libraries: `libavformat`, `libavcodec`, `libavutil`,
+  `libswresample`.
+
+On Arch Linux:
+
+```
+sudo pacman -S base-devel meson ninja pkgconf flac opusfile libvorbis libid3tag curl ffmpeg alsa-lib libpulse
+```
 
 ## Status
 

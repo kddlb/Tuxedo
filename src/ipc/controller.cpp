@@ -75,6 +75,7 @@ json Controller::dispatch(const json &req) {
 		out["position"] = player_.position_seconds();
 		out["duration"] = player_.duration_seconds();
 		out["volume"] = player_.volume();
+		out["replaygain_mode"] = replaygain_mode_name(player_.replaygain_mode());
 		out["url"] = player_.current_url();
 		out["metadata"] = player_.current_metadata();
 		out["queue_length"] = player_.queue_length();
@@ -110,6 +111,18 @@ json Controller::dispatch(const json &req) {
 			arr.push_back(std::move(o));
 		}
 		out["queue"] = std::move(arr);
+		return out;
+	}
+	if(op == "replaygain") {
+		if(req.contains("mode")) {
+			if(!req["mode"].is_string())
+				return make_err(req, "replaygain requires string `mode`");
+			auto mode = replaygain_mode_from_string(req["mode"].get<std::string>());
+			if(!mode) return make_err(req, "unknown replaygain mode");
+			player_.set_replaygain_mode(*mode);
+		}
+		json out = make_ok(req);
+		out["mode"] = replaygain_mode_name(player_.replaygain_mode());
 		return out;
 	}
 	return make_err(req, "unknown op: " + op);

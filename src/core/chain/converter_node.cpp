@@ -28,6 +28,10 @@ void ConverterNode::request_flush() {
 	flush_requested_.store(true);
 }
 
+void ConverterNode::set_gain(float gain) {
+	gain_.store(gain);
+}
+
 void ConverterNode::process() {
 	if(!previous_) return;
 
@@ -44,6 +48,10 @@ void ConverterNode::process() {
 			if(flush_requested_.exchange(false)) flush_buffer();
 			auto chunk = previous_->read_chunk(4096);
 			if(chunk.empty()) break;
+			const float gain = gain_.load();
+			if(gain != 1.0f) {
+				for(float &sample : chunk.samples()) sample *= gain;
+			}
 			write_chunk(std::move(chunk));
 		}
 		return;
@@ -111,6 +119,10 @@ void ConverterNode::process() {
 
 			if(out_produced > 0) {
 				out_samples.resize(out_produced * out_fmt.channels);
+				const float gain = gain_.load();
+				if(gain != 1.0f) {
+					for(float &sample : out_samples) sample *= gain;
+				}
 				write_chunk(AudioChunk(out_fmt, std::move(out_samples), in_chunk.stream_timestamp()));
 			}
 
@@ -137,6 +149,10 @@ void ConverterNode::process() {
 			out_samples.data(), &out_produced);
 		if(r != MA_SUCCESS || out_produced == 0) break;
 		out_samples.resize(out_produced * out_fmt.channels);
+		const float gain = gain_.load();
+		if(gain != 1.0f) {
+			for(float &sample : out_samples) sample *= gain;
+		}
 		write_chunk(AudioChunk(out_fmt, std::move(out_samples), 0.0));
 	}
 }

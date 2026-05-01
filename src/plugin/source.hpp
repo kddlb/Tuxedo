@@ -6,7 +6,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
@@ -14,6 +16,8 @@ namespace tuxedo {
 
 class Source {
 public:
+	using MetadataChangedCallback = std::function<void()>;
+
 	virtual ~Source() = default;
 
 	virtual bool open(const std::string &url) = 0;
@@ -29,6 +33,8 @@ public:
 
 	virtual const std::string &url() const = 0;
 	virtual const std::string &mime_type() const = 0;
+	virtual nlohmann::json metadata() const { return nlohmann::json::object(); }
+	virtual void set_metadata_changed_callback(MetadataChangedCallback cb) { (void)cb; }
 
 	// Schemes this source handles (e.g. "file", "http").
 	static std::vector<std::string> schemes() { return {}; }

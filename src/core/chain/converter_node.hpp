@@ -25,12 +25,14 @@ public:
 	// internal state is reset and the output ring buffer is dropped.
 	// Call alongside a seek on the upstream InputNode.
 	void request_flush();
+	void set_gain(float gain);
 
 	void process() override;
 
 private:
 	std::optional<StreamFormat> target_;
 	std::atomic<bool> flush_requested_{false};
+	std::atomic<float> gain_{1.0f};
 	// void * because ma_data_converter is an opaque struct from
 	// miniaudio.h and we don't want that header leaking through here.
 	void *converter_ = nullptr;

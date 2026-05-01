@@ -18,6 +18,7 @@ public:
 
 	bool open_url(const std::string &url);
 	void close();
+	void set_metadata_changed_callback(Source::MetadataChangedCallback cb);
 
 	const DecoderProperties &properties() const { return props_; }
 	Decoder *decoder() const { return decoder_.get(); }
@@ -31,6 +32,7 @@ private:
 	SourcePtr source_;
 	DecoderPtr decoder_;
 	DecoderProperties props_{};
+	Source::MetadataChangedCallback metadata_changed_cb_;
 
 	std::atomic<int64_t> pending_seek_{-1};
 };

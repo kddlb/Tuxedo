@@ -5,6 +5,7 @@
 
 #include "core/chain/buffer_chain.hpp"
 #include "core/chain/output_node.hpp"
+#include "core/replaygain.hpp"
 #include "core/status.hpp"
 
 #include <nlohmann/json.hpp>
@@ -54,6 +55,8 @@ public:
 
 	void set_volume(double v);
 	double volume() const;
+	void set_replaygain_mode(ReplayGainMode mode);
+	ReplayGainMode replaygain_mode() const;
 
 	PlaybackStatus status() const;
 	double position_seconds() const;
@@ -79,9 +82,11 @@ private:
 	void maybe_arm_next_locked();
 	// Called by the watchdog thread when OutputNode signals drain/advance.
 	void watchdog_loop();
+	void attach_metadata_callback_locked();
 
 	void set_status(PlaybackStatus s);
 	void emit(PlayerEvent ev);
+	void apply_replaygain_locked(BufferChain *chain);
 	void teardown();
 	void teardown_locked();
 
@@ -96,6 +101,7 @@ private:
 	std::deque<std::unique_ptr<BufferChain>> queue_;
 
 	double desired_volume_ = 1.0;
+	ReplayGainMode replaygain_mode_ = ReplayGainMode::AlbumPeak;
 
 	// Watchdog thread + signalling.
 	std::thread watchdog_;

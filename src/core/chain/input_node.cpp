@@ -16,15 +16,34 @@ bool InputNode::open_url(const std::string &url) {
 	close();
 
 	auto &reg = PluginRegistry::instance();
-	source_ = reg.source_for_url(url);
-	if(!source_ || !source_->open(url)) return false;
-
 	const std::string ext = PluginRegistry::extension_of(url);
-	decoder_ = reg.decoder_for_extension(ext);
-	if(!decoder_ || !decoder_->open(source_.get())) return false;
+	std::vector<DecoderPtr> candidates;
+	if(auto primary = reg.decoder_for_extension(ext)) {
+		candidates.push_back(std::move(primary));
+	}
+	for(auto &fallback : reg.fallback_decoders()) {
+		candidates.push_back(std::move(fallback));
+	}
 
-	props_ = decoder_->properties();
-	return props_.format.valid();
+	for(auto &candidate : candidates) {
+		auto source = reg.source_for_url(url);
+		if(!source || !source->open(url)) continue;
+		if(!candidate || !candidate->open(source.get())) continue;
+
+		DecoderProperties props = candidate->properties();
+		if(!props.format.valid()) {
+			candidate->close();
+			continue;
+		}
+
+		source_ = std::move(source);
+		decoder_ = std::move(candidate);
+		if(source_) source_->set_metadata_changed_callback(metadata_changed_cb_);
+		props_ = props;
+		return true;
+	}
+
+	return false;
 }
 
 void InputNode::close() {
@@ -33,10 +52,16 @@ void InputNode::close() {
 		decoder_.reset();
 	}
 	if(source_) {
+		source_->set_metadata_changed_callback({});
 		source_->close();
 		source_.reset();
 	}
 	props_ = {};
+}
+
+void InputNode::set_metadata_changed_callback(Source::MetadataChangedCallback cb) {
+	metadata_changed_cb_ = std::move(cb);
+	if(source_) source_->set_metadata_changed_callback(metadata_changed_cb_);
 }
 
 void InputNode::request_seek(int64_t frame) {

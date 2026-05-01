@@ -53,6 +53,10 @@ bool HttpServer::start() {
 		json req{{"op", "metadata"}};
 		reply(res, ctl_.dispatch(req));
 	});
+	srv_->Get("/replaygain", [this](const httplib::Request &, httplib::Response &res) {
+		json req{{"op", "replaygain"}};
+		reply(res, ctl_.dispatch(req));
+	});
 	srv_->Post("/play", wrap_op("play"));
 	srv_->Post("/pause", wrap_op("pause"));
 	srv_->Post("/resume", wrap_op("resume"));
@@ -62,6 +66,7 @@ bool HttpServer::start() {
 	srv_->Post("/queue", wrap_op("queue"));
 	srv_->Post("/queue_clear", wrap_op("queue_clear"));
 	srv_->Post("/skip", wrap_op("skip"));
+	srv_->Post("/replaygain", wrap_op("replaygain"));
 	srv_->Get("/queue", [this](const httplib::Request &, httplib::Response &res) {
 		json req{{"op", "queue_list"}};
 		reply(res, ctl_.dispatch(req));

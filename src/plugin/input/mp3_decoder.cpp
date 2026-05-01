@@ -302,6 +302,12 @@ int64_t Mp3Decoder::seek(int64_t frame) {
 
 nlohmann::json Mp3Decoder::metadata() const {
 	nlohmann::json out = id3_tags_;
+	if(impl_ && impl_->src) {
+		nlohmann::json source_metadata = impl_->src->metadata();
+		for(auto it = source_metadata.begin(); it != source_metadata.end(); ++it) {
+			out[it.key()] = it.value();
+		}
+	}
 	out["codec"] = "MP3";
 	if(!picture_bytes_.empty()) {
 		out["album_art"] = {

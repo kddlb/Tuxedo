@@ -31,6 +31,7 @@ public:
 	// ring buffers, resets the resampler's internal state, and tells the
 	// input decoder where to resume.
 	void seek(int64_t frame);
+	void set_gain(float gain);
 
 	void launch();
 	void request_stop();

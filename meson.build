@@ -92,6 +92,12 @@ json_inc = include_directories('vendor/json', is_system: true)
 httplib_inc = include_directories('vendor/httplib', is_system: true)
 
 deps = [thread_dep, flac_dep, opusfile_dep, vorbisfile_dep, id3tag_dep]
+curl_dep = dependency('libcurl')
+avformat_dep = dependency('libavformat')
+avcodec_dep = dependency('libavcodec')
+avutil_dep = dependency('libavutil')
+swresample_dep = dependency('libswresample')
+deps += [curl_dep, avformat_dep, avcodec_dep, avutil_dep, swresample_dep]
 
 host = host_machine.system()
 if host == 'darwin'
@@ -118,14 +124,17 @@ core_inc = include_directories('src')
 core_sources = files(
   'src/core/audio_chunk.cpp',
   'src/core/player.cpp',
+  'src/core/replaygain.cpp',
   'src/core/chain/node.cpp',
   'src/core/chain/input_node.cpp',
   'src/core/chain/output_node.cpp',
   'src/core/chain/converter_node.cpp',
   'src/core/chain/buffer_chain.cpp',
   'src/plugin/registry.cpp',
+  'src/plugin/input/ffmpeg_decoder.cpp',
   'src/plugin/input/file_source.cpp',
   'src/plugin/input/flac_decoder.cpp',
+  'src/plugin/input/http_source.cpp',
   'src/plugin/input/miniaudio_decoder.cpp',
   'src/plugin/input/mp3_decoder.cpp',
   'src/plugin/input/opus_decoder.cpp',
