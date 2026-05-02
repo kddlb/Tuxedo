@@ -38,7 +38,12 @@ bool InputNode::open_url(const std::string &url) {
 
 		source_ = std::move(source);
 		decoder_ = std::move(candidate);
-		if(source_) source_->set_metadata_changed_callback(metadata_changed_cb_);
+		if(source_) source_->set_metadata_changed_callback([this] {
+			if(metadata_changed_cb_) metadata_changed_cb_();
+		});
+		if(decoder_) decoder_->set_metadata_changed_callback([this] {
+			if(metadata_changed_cb_) metadata_changed_cb_();
+		});
 		props_ = props;
 		return true;
 	}
@@ -48,6 +53,7 @@ bool InputNode::open_url(const std::string &url) {
 
 void InputNode::close() {
 	if(decoder_) {
+		decoder_->set_metadata_changed_callback({});
 		decoder_->close();
 		decoder_.reset();
 	}
@@ -61,7 +67,12 @@ void InputNode::close() {
 
 void InputNode::set_metadata_changed_callback(Source::MetadataChangedCallback cb) {
 	metadata_changed_cb_ = std::move(cb);
-	if(source_) source_->set_metadata_changed_callback(metadata_changed_cb_);
+	if(source_) source_->set_metadata_changed_callback([this] {
+		if(metadata_changed_cb_) metadata_changed_cb_();
+	});
+	if(decoder_) decoder_->set_metadata_changed_callback([this] {
+		if(metadata_changed_cb_) metadata_changed_cb_();
+	});
 }
 
 void InputNode::request_seek(int64_t frame) {

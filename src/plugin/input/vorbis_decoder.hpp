@@ -27,6 +27,7 @@ public:
 	int64_t seek(int64_t frame) override;
 
 	nlohmann::json metadata() const override;
+	void set_metadata_changed_callback(MetadataChangedCallback cb) override;
 
 private:
 	void parse_info();
@@ -39,10 +40,15 @@ private:
 	DecoderProperties props_{};
 
 	int64_t current_frame_ = 0;
+	int currentSection = 0;
+	int lastSection = 0;
 
 	nlohmann::json vorbis_tags_ = nlohmann::json::object();
 	std::string picture_mime_;
 	std::vector<uint8_t> picture_bytes_;
+
+	// Interval metadata updated
+	MetadataChangedCallback metadata_changed_cb_;
 };
 
 } // namespace tuxedo

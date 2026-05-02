@@ -74,6 +74,8 @@ bool OpusDecoder::open(Source *source) {
 		return false;
 	}
 
+	currentSection = lastSection = op_current_link(cast(of_));
+
 	parse_head();
 	parse_tags();
 	props_.codec = "Opus";
@@ -175,6 +177,14 @@ void OpusDecoder::accept_vorbis_entry(const char *name, size_t name_len,
 bool OpusDecoder::read(AudioChunk &out, size_t max_frames) {
 	if(!of_ || max_frames == 0) return false;
 
+	if(currentSection != lastSection) {
+		parse_head();
+		parse_tags();
+		if(metadata_changed_cb_) metadata_changed_cb_();
+	}
+
+	lastSection = currentSection;
+
 	if(block_frames_consumed_ >= block_frames_) {
 		// Refill. libopusfile returns as many frames as it has ready
 		// (a few tens to low-hundreds typically); one call per read is
@@ -188,6 +198,7 @@ bool OpusDecoder::read(AudioChunk &out, size_t max_frames) {
 		std::vector<float> raw(static_cast<size_t>(kMaxRead) * ch);
 		int got = op_read_float(cast(of_), raw.data(), kMaxRead * ch, nullptr);
 		if(got <= 0) return false;
+		currentSection = op_current_link(cast(of_));
 
 		// op_read_float yields interleaved samples in Vorbis channel order.
 		// Re-pack through chmap_ into tuxedo-native order.
@@ -254,6 +265,10 @@ nlohmann::json OpusDecoder::metadata() const {
 	}
 
 	return out;
+}
+
+void OpusDecoder::set_metadata_changed_callback(MetadataChangedCallback cb) {
+	metadata_changed_cb_ = std::move(cb);
 }
 
 } // namespace tuxedo

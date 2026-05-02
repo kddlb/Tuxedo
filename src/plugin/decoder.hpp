@@ -21,6 +21,8 @@ struct DecoderProperties {
 
 class Decoder {
 public:
+	using MetadataChangedCallback = std::function<void()>;
+
 	virtual ~Decoder() = default;
 
 	virtual bool open(Source *source) = 0;
@@ -39,6 +41,7 @@ public:
 	// as JSON arrays, optional "album_art": {mime, data_b64}. Default is
 	// empty; decoders that don't surface tags (miniaudio) just inherit.
 	virtual nlohmann::json metadata() const { return nlohmann::json::object(); }
+	virtual void set_metadata_changed_callback(MetadataChangedCallback cb) { (void)cb; }
 };
 
 using DecoderPtr = std::unique_ptr<Decoder>;

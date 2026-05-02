@@ -93,12 +93,14 @@ void metadata_cb(const FLAC__StreamDecoder *, const FLAC__StreamMetadata *meta,
 				    reinterpret_cast<const char *>(vc.comments[i].entry),
 				    vc.comments[i].length);
 			}
+			self->new_metadata();
 			break;
 		}
 		case FLAC__METADATA_TYPE_PICTURE:
 			self->accept_picture(meta->data.picture.mime_type,
 			                     meta->data.picture.data,
 			                     meta->data.picture.data_length);
+			self->new_metadata();
 			break;
 		default:
 			break;
@@ -304,6 +306,14 @@ nlohmann::json FlacDecoder::metadata() const {
 		};
 	}
 	return out;
+}
+
+void FlacDecoder::set_metadata_changed_callback(MetadataChangedCallback cb) {
+	metadata_changed_cb_ = std::move(cb);
+}
+
+void FlacDecoder::new_metadata(void) {
+	if(metadata_changed_cb_) metadata_changed_cb_();
 }
 
 } // namespace tuxedo

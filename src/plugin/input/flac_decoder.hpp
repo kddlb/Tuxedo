@@ -30,6 +30,7 @@ public:
 	int64_t seek(int64_t frame) override;
 
 	nlohmann::json metadata() const override;
+	void set_metadata_changed_callback(MetadataChangedCallback cb) override;
 
 	// --- Accessors used by the C callback shims ---
 	Source *source() { return source_; }
@@ -54,6 +55,9 @@ public:
 
 	// An embedded PICTURE block. `data` is the raw image bytes.
 	void accept_picture(const char *mime, const uint8_t *data, size_t length);
+
+	// Metadata updated on interval, fire callback if registered
+	void new_metadata(void);
 
 private:
 	void *dec_ = nullptr; // FLAC__StreamDecoder *
@@ -83,6 +87,9 @@ private:
 	// Embedded album art, if any. Base64-encoded lazily in metadata().
 	std::string picture_mime_;
 	std::vector<uint8_t> picture_bytes_;
+
+	// Interval metadata updated
+	MetadataChangedCallback metadata_changed_cb_;
 };
 
 } // namespace tuxedo
