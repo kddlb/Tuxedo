@@ -1,6 +1,8 @@
 #include "core/player.hpp"
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 namespace tuxedo {
 
@@ -26,7 +28,49 @@ nlohmann::json metadata_from_chain_unlocked(const BufferChain *c) {
 	return c->input()->decoder()->metadata();
 }
 
+template <typename T>
+void shuffle_container(std::deque<T> &items, std::mt19937 &rng) {
+	std::vector<T> tmp;
+	tmp.reserve(items.size());
+	while(!items.empty()) {
+		tmp.push_back(std::move(items.front()));
+		items.pop_front();
+	}
+	std::shuffle(tmp.begin(), tmp.end(), rng);
+	for(auto &item : tmp) items.push_back(std::move(item));
+}
+
 } // namespace
+
+const char *shuffle_mode_name(ShuffleMode mode) {
+	switch(mode) {
+		case ShuffleMode::Off: return "off";
+		case ShuffleMode::All: return "all";
+	}
+	return "off";
+}
+
+const char *repeat_mode_name(RepeatMode mode) {
+	switch(mode) {
+		case RepeatMode::Off: return "off";
+		case RepeatMode::One: return "one";
+		case RepeatMode::All: return "all";
+	}
+	return "off";
+}
+
+std::optional<ShuffleMode> shuffle_mode_from_string(const std::string &mode) {
+	if(mode == "off") return ShuffleMode::Off;
+	if(mode == "all") return ShuffleMode::All;
+	return std::nullopt;
+}
+
+std::optional<RepeatMode> repeat_mode_from_string(const std::string &mode) {
+	if(mode == "off") return RepeatMode::Off;
+	if(mode == "one") return RepeatMode::One;
+	if(mode == "all") return RepeatMode::All;
+	return std::nullopt;
+}
 
 Player::Player() {
 	watchdog_ = std::thread([this] { watchdog_loop(); });
@@ -47,8 +91,7 @@ void Player::set_event_callback(PlayerEventCallback cb) {
 	cb_ = std::move(cb);
 }
 
-bool Player::play(const std::string &url) {
-	// Clean slate, then queue + promote.
+bool Player::play(const std::string &url, bool from_playlist) {
 	teardown();
 
 	auto chain = std::make_unique<BufferChain>();
@@ -57,12 +100,19 @@ bool Player::play(const std::string &url) {
 		return false;
 	}
 
+	PlaylistItem item;
+	item.url = url;
+	item.format = chain->format();
+	item.duration_seconds = duration_of_chain(chain.get());
+	item.metadata = metadata_from_chain(chain.get());
+	item.from_playlist = from_playlist;
+
 	{
 		std::lock_guard<std::mutex> g(mtx_);
-		queue_.clear();
-		queue_.push_back(std::move(chain));
-		if(!start_head_locked()) {
-			queue_.clear();
+		clear_playlist_locked();
+		items_.push_back(std::move(item));
+		if(!start_chain_locked(std::move(chain), 0)) {
+			clear_playlist_locked();
 			emit({PlayerEvent::Kind::Error, PlaybackStatus::Stopped, url, "output open failed", {}});
 			return false;
 		}
@@ -79,20 +129,34 @@ bool Player::play(const std::string &url) {
 	return true;
 }
 
-bool Player::queue(const std::string &url) {
+bool Player::queue(const std::string &url, bool from_playlist) {
 	auto chain = std::make_unique<BufferChain>();
 	if(!chain->open(url)) {
 		emit({PlayerEvent::Kind::Error, status(), url, "queue open failed", {}});
 		return false;
 	}
 
+	PlaylistItem item;
+	item.url = url;
+	item.format = chain->format();
+	item.duration_seconds = duration_of_chain(chain.get());
+	item.metadata = metadata_from_chain(chain.get());
+	item.from_playlist = from_playlist;
+
 	bool needs_start = false;
 	{
 		std::lock_guard<std::mutex> g(mtx_);
-		queue_.push_back(std::move(chain));
+		size_t index = items_.size();
+		items_.push_back(std::move(item));
 		if(!chain_) {
-			needs_start = start_head_locked();
+			needs_start = start_chain_locked(std::move(chain), index);
 		} else {
+			if(shuffle_mode_ == ShuffleMode::All && !queue_.empty()) {
+				std::uniform_int_distribution<size_t> dist(0, queue_.size());
+				insert_upcoming_locked(index, std::move(chain), dist(rng_));
+			} else {
+				insert_upcoming_locked(index, std::move(chain));
+			}
 			maybe_arm_next_locked();
 		}
 	}
@@ -114,46 +178,111 @@ void Player::queue_clear() {
 	{
 		std::lock_guard<std::mutex> g(mtx_);
 		victims = std::move(queue_);
+		upcoming_indices_.clear();
 		if(output_) output_->set_next_source(nullptr);
 	}
-	for(auto &c : victims) {
-		if(c) c->close();
-	}
+	for(auto &c : victims) if(c) c->close();
 }
 
-bool Player::skip() {
-	// Advance the queue by faking a "current finished" on the watchdog.
+bool Player::previous() {
 	std::unique_ptr<BufferChain> old_chain;
 	std::string old_url;
-	bool had_current = false;
+	std::string new_url;
+	nlohmann::json new_meta;
+
 	{
 		std::lock_guard<std::mutex> g(mtx_);
-		if(!chain_) return false;
-		had_current = true;
+		if(!chain_ || !current_index_) return false;
+
+		if(output_ && output_->seconds_played() > 5.0) {
+			auto fmt = output_->format();
+			chain_->seek(0);
+			output_->flush_leftover();
+			if(fmt.valid()) output_->set_position_frames(0);
+			return true;
+		}
+
+		if(history_indices_.empty()) {
+			auto fmt = output_ ? output_->format() : StreamFormat{};
+			chain_->seek(0);
+			if(output_) {
+				output_->flush_leftover();
+				if(fmt.valid()) output_->set_position_frames(0);
+			}
+			return true;
+		}
+
+		const size_t old_index = *current_index_;
+		const size_t prev_index = history_indices_.back();
+		history_indices_.pop_back();
+
+		auto old_requeued = open_chain_for_item_locked(old_index);
+		if(!old_requeued) return false;
+		insert_upcoming_locked(old_index, std::move(old_requeued), 0);
+
 		old_url = current_url_;
 		old_chain = std::move(chain_);
 		if(output_) {
-			// Hard stop the current output path; we'll re-open for the new head.
 			output_->close();
 			output_.reset();
 		}
+		current_url_.clear();
+		current_index_.reset();
+
+		if(!start_index_locked(prev_index)) return false;
+		new_url = current_url_;
+		new_meta = metadata_from_chain_unlocked(chain_.get());
 	}
+
 	if(old_chain) old_chain->close();
+	set_status(PlaybackStatus::Playing);
 
-	if(had_current) {
-		PlayerEvent ended;
-		ended.kind = PlayerEvent::Kind::StreamEnded;
-		ended.status = PlaybackStatus::Stopped;
-		ended.url = old_url;
-		emit(std::move(ended));
-	}
+	PlayerEvent ended;
+	ended.kind = PlayerEvent::Kind::StreamEnded;
+	ended.status = PlaybackStatus::Stopped;
+	ended.url = old_url;
+	emit(std::move(ended));
 
+	PlayerEvent began;
+	began.kind = PlayerEvent::Kind::StreamBegan;
+	began.status = PlaybackStatus::Playing;
+	began.url = new_url;
+	began.metadata = std::move(new_meta);
+	emit(std::move(began));
+	return true;
+}
+
+bool Player::skip() {
+	std::unique_ptr<BufferChain> old_chain;
+	std::string old_url;
 	bool started = false;
+
 	{
 		std::lock_guard<std::mutex> g(mtx_);
+		if(!chain_ || !current_index_) return false;
+		old_url = current_url_;
+		history_indices_.push_back(*current_index_);
+		old_chain = std::move(chain_);
+		if(output_) {
+			output_->close();
+			output_.reset();
+		}
 		current_url_.clear();
+		current_index_.reset();
+		if(upcoming_indices_.empty() && repeat_mode_ == RepeatMode::All) {
+			prepare_repeat_all_cycle_locked();
+		}
 		if(!queue_.empty()) started = start_head_locked();
 	}
+
+	if(old_chain) old_chain->close();
+
+	PlayerEvent ended;
+	ended.kind = PlayerEvent::Kind::StreamEnded;
+	ended.status = started ? PlaybackStatus::Playing : PlaybackStatus::Stopped;
+	ended.url = old_url;
+	emit(std::move(ended));
+
 	if(started) {
 		set_status(PlaybackStatus::Playing);
 		PlayerEvent began;
@@ -165,6 +294,73 @@ bool Player::skip() {
 	} else {
 		set_status(PlaybackStatus::Stopped);
 	}
+	return true;
+}
+
+bool Player::queue_jump(size_t index) {
+	std::unique_ptr<BufferChain> old_chain;
+	std::string old_url;
+	bool started = false;
+
+	{
+		std::lock_guard<std::mutex> g(mtx_);
+		if(!current_index_ || !chain_ || !output_) return false;
+		if(index == *current_index_) {
+			chain_->seek(0);
+			output_->flush_leftover();
+			output_->set_position_frames(0);
+			return true;
+		}
+
+		old_url = current_url_;
+		history_indices_.push_back(*current_index_);
+		size_t distance = 0;
+		bool found = false;
+		for(size_t i = 0; i < upcoming_indices_.size(); ++i) {
+			if(upcoming_indices_[i] == index) {
+				distance = i;
+				found = true;
+				break;
+			}
+		}
+		if(!found) {
+			history_indices_.pop_back();
+			return false;
+		}
+		for(size_t i = 0; i < distance; ++i) history_indices_.push_back(upcoming_indices_[i]);
+		for(size_t i = 0; i < distance; ++i) {
+			auto skipped = std::move(queue_.front());
+			queue_.pop_front();
+			upcoming_indices_.pop_front();
+			if(skipped) skipped->close();
+		}
+
+		old_chain = std::move(chain_);
+		if(output_) {
+			output_->close();
+			output_.reset();
+		}
+		current_url_.clear();
+		current_index_.reset();
+		started = start_head_locked();
+	}
+
+	if(old_chain) old_chain->close();
+	if(!started) return false;
+
+	set_status(PlaybackStatus::Playing);
+	PlayerEvent ended;
+	ended.kind = PlayerEvent::Kind::StreamEnded;
+	ended.status = PlaybackStatus::Stopped;
+	ended.url = old_url;
+	emit(std::move(ended));
+
+	PlayerEvent began;
+	began.kind = PlayerEvent::Kind::StreamBegan;
+	began.status = PlaybackStatus::Playing;
+	began.url = current_url();
+	began.metadata = current_metadata();
+	emit(std::move(began));
 	return true;
 }
 
@@ -204,9 +400,6 @@ bool Player::seek_seconds(double seconds) {
 	if(!chain_ || !output_) return false;
 	auto fmt = output_->format();
 	if(!fmt.valid()) return false;
-	// Seek in the input's native frame rate, not the output rate —
-	// otherwise a 48 kHz output playing a 44.1 kHz source would request
-	// a frame offset past the end of the file.
 	auto input_fmt = chain_->format();
 	int64_t frame = static_cast<int64_t>(seconds * input_fmt.sample_rate);
 	chain_->seek(frame);
@@ -233,6 +426,33 @@ void Player::set_replaygain_mode(ReplayGainMode mode) {
 ReplayGainMode Player::replaygain_mode() const {
 	std::lock_guard<std::mutex> g(mtx_);
 	return replaygain_mode_;
+}
+
+void Player::set_shuffle_mode(ShuffleMode mode) {
+	std::lock_guard<std::mutex> g(mtx_);
+	if(shuffle_mode_ == mode) return;
+	shuffle_mode_ = mode;
+	if(mode == ShuffleMode::All) {
+		reshuffle_upcoming_locked();
+	} else {
+		sort_upcoming_locked();
+	}
+	maybe_arm_next_locked();
+}
+
+ShuffleMode Player::shuffle_mode() const {
+	std::lock_guard<std::mutex> g(mtx_);
+	return shuffle_mode_;
+}
+
+void Player::set_repeat_mode(RepeatMode mode) {
+	std::lock_guard<std::mutex> g(mtx_);
+	repeat_mode_ = mode;
+}
+
+RepeatMode Player::repeat_mode() const {
+	std::lock_guard<std::mutex> g(mtx_);
+	return repeat_mode_;
 }
 
 double Player::volume() const {
@@ -265,22 +485,49 @@ nlohmann::json Player::current_metadata() const {
 	return metadata_from_chain_unlocked(chain_.get());
 }
 
+std::optional<size_t> Player::current_queue_index() const {
+	std::lock_guard<std::mutex> g(mtx_);
+	return current_index_;
+}
+
+bool Player::current_from_playlist() const {
+	std::lock_guard<std::mutex> g(mtx_);
+	if(!current_index_ || *current_index_ >= items_.size()) return false;
+	return items_[*current_index_].from_playlist;
+}
+
 size_t Player::queue_length() const {
 	std::lock_guard<std::mutex> g(mtx_);
-	return queue_.size();
+	return current_index_ ? (queue_.size() + 1) : queue_.size();
 }
 
 std::vector<Player::QueueEntry> Player::queue_snapshot() const {
 	std::vector<QueueEntry> out;
 	std::lock_guard<std::mutex> g(mtx_);
-	out.reserve(queue_.size());
-	for(const auto &c : queue_) {
+	out.reserve((current_index_ ? 1 : 0) + queue_.size());
+
+	if(current_index_ && chain_) {
 		QueueEntry e;
-		if(c) {
-			e.url = c->url();
-			e.format = c->format();
-			e.duration_seconds = duration_of_chain(c.get());
-			e.metadata = metadata_from_chain(c.get());
+		e.index = *current_index_;
+		e.current = true;
+		e.url = current_url_;
+		e.format = chain_->format();
+		e.duration_seconds = duration_of_chain(chain_.get());
+		e.metadata = metadata_from_chain_unlocked(chain_.get());
+		e.from_playlist = items_[*current_index_].from_playlist;
+		out.push_back(std::move(e));
+	}
+
+	for(size_t i = 0; i < queue_.size(); ++i) {
+		QueueEntry e;
+		if(queue_[i]) {
+			const size_t item_index = upcoming_indices_[i];
+			e.index = item_index;
+			e.url = items_[item_index].url;
+			e.format = items_[item_index].format;
+			e.duration_seconds = items_[item_index].duration_seconds;
+			e.metadata = items_[item_index].metadata;
+			e.from_playlist = items_[item_index].from_playlist;
 		}
 		out.push_back(std::move(e));
 	}
@@ -299,28 +546,34 @@ void Player::attach_metadata_callback_locked() {
 			ev.status = status_;
 			ev.url = current_url_;
 			ev.metadata = metadata_from_chain_unlocked(chain_.get());
+			if(current_index_) items_[*current_index_].metadata = ev.metadata;
 		}
 		emit(std::move(ev));
 	});
 }
 
 bool Player::start_head_locked() {
-	// queue_ must be non-empty; mtx_ held.
+	if(queue_.empty() || upcoming_indices_.empty()) return false;
 	auto chain = std::move(queue_.front());
 	queue_.pop_front();
+	size_t index = upcoming_indices_.front();
+	upcoming_indices_.pop_front();
+	return start_chain_locked(std::move(chain), index);
+}
 
-	// If the chain was pre-launched as an armed-next under the previous
-	// output format, its converter captured a stale target; reopen so
-	// we can retarget cleanly at the new device's native format.
+bool Player::start_chain_locked(std::unique_ptr<BufferChain> chain, size_t index) {
+	if(!chain) return false;
+
 	if(chain->launched()) {
 		std::string url = chain->url();
 		chain->close();
 		if(!chain->open(url)) return false;
 	}
 
-	// Head of playback — open the device at the track's native format
-	// and run the chain's converter in identity passthrough. Queued
-	// followers will retarget to this same format when they're armed.
+	items_[index].format = chain->format();
+	items_[index].duration_seconds = duration_of_chain(chain.get());
+	items_[index].metadata = metadata_from_chain(chain.get());
+
 	chain->retarget(std::nullopt);
 	apply_replaygain_locked(chain.get());
 	chain->launch();
@@ -328,12 +581,8 @@ bool Player::start_head_locked() {
 	auto output = std::make_unique<OutputNode>();
 	if(!output->open(chain->format())) return false;
 
-	// set_previous must happen *after* open() — open() calls close()
-	// internally, which resets the atomic previous_ pointer.
 	output->set_previous(chain->final_node());
 	output->set_volume(desired_volume_);
-
-	// Wire up audio-thread notifications.
 	output->set_on_stream_consumed([this] {
 		std::lock_guard<std::mutex> g(watchdog_mtx_);
 		wake_for_consumed_ = true;
@@ -344,31 +593,119 @@ bool Player::start_head_locked() {
 		wake_for_advance_ = true;
 		watchdog_cv_.notify_all();
 	});
-
 	output->start();
 
-	current_url_ = chain->url();
+	current_index_ = index;
+	current_url_ = items_[index].url;
 	chain_ = std::move(chain);
 	output_ = std::move(output);
 	attach_metadata_callback_locked();
-
 	maybe_arm_next_locked();
 	return true;
+}
+
+bool Player::restart_current_locked() {
+	if(!current_index_) return false;
+	std::unique_ptr<BufferChain> old_chain = std::move(chain_);
+	if(output_) {
+		output_->close();
+		output_.reset();
+	}
+	current_url_.clear();
+	size_t idx = *current_index_;
+	current_index_.reset();
+	if(old_chain) old_chain->close();
+	return start_index_locked(idx);
+}
+
+bool Player::start_index_locked(size_t index) {
+	auto chain = open_chain_for_item_locked(index);
+	if(!chain) return false;
+	return start_chain_locked(std::move(chain), index);
+}
+
+std::unique_ptr<BufferChain> Player::open_chain_for_item_locked(size_t index) {
+	if(index >= items_.size()) return nullptr;
+	auto chain = std::make_unique<BufferChain>();
+	if(!chain->open(items_[index].url)) return nullptr;
+	items_[index].format = chain->format();
+	items_[index].duration_seconds = duration_of_chain(chain.get());
+	items_[index].metadata = metadata_from_chain(chain.get());
+	return chain;
+}
+
+void Player::insert_upcoming_locked(size_t item_index, std::unique_ptr<BufferChain> chain, std::optional<size_t> pos) {
+	size_t at = pos ? std::min(*pos, queue_.size()) : queue_.size();
+	auto qit = queue_.begin() + static_cast<std::deque<std::unique_ptr<BufferChain>>::difference_type>(at);
+	auto iit = upcoming_indices_.begin() + static_cast<std::deque<size_t>::difference_type>(at);
+	queue_.insert(qit, std::move(chain));
+	upcoming_indices_.insert(iit, item_index);
+}
+
+void Player::reshuffle_upcoming_locked() {
+	std::vector<std::pair<size_t, std::unique_ptr<BufferChain>>> zipped;
+	zipped.reserve(queue_.size());
+	while(!queue_.empty()) {
+		zipped.emplace_back(upcoming_indices_.front(), std::move(queue_.front()));
+		upcoming_indices_.pop_front();
+		queue_.pop_front();
+	}
+	std::shuffle(zipped.begin(), zipped.end(), rng_);
+	for(auto &entry : zipped) {
+		upcoming_indices_.push_back(entry.first);
+		queue_.push_back(std::move(entry.second));
+	}
+}
+
+void Player::sort_upcoming_locked() {
+	std::vector<std::pair<size_t, std::unique_ptr<BufferChain>>> zipped;
+	zipped.reserve(queue_.size());
+	while(!queue_.empty()) {
+		zipped.emplace_back(upcoming_indices_.front(), std::move(queue_.front()));
+		upcoming_indices_.pop_front();
+		queue_.pop_front();
+	}
+	std::sort(zipped.begin(), zipped.end(), [](const auto &a, const auto &b) {
+		return a.first < b.first;
+	});
+	for(auto &entry : zipped) {
+		upcoming_indices_.push_back(entry.first);
+		queue_.push_back(std::move(entry.second));
+	}
+}
+
+bool Player::prepare_repeat_all_cycle_locked() {
+	if(history_indices_.empty()) return false;
+	std::vector<size_t> cycle(history_indices_.begin(), history_indices_.end());
+	history_indices_.clear();
+	if(shuffle_mode_ == ShuffleMode::All) std::shuffle(cycle.begin(), cycle.end(), rng_);
+	for(size_t index : cycle) {
+		auto chain = open_chain_for_item_locked(index);
+		if(!chain) continue;
+		insert_upcoming_locked(index, std::move(chain));
+	}
+	return !queue_.empty();
 }
 
 void Player::maybe_arm_next_locked() {
 	if(!output_ || queue_.empty()) return;
 	auto &next = queue_.front();
 	if(!next) return;
-	// First arm: configure the chain's converter for the current output
-	// format and launch its workers so it pre-buffers while the current
-	// track plays. Subsequent calls short-circuit via launched().
 	if(!next->launched()) {
 		next->retarget(output_->format());
 		apply_replaygain_locked(next.get());
 		next->launch();
 	}
 	output_->set_next_source(next->final_node());
+}
+
+void Player::clear_playlist_locked() {
+	queue_.clear();
+	upcoming_indices_.clear();
+	history_indices_.clear();
+	items_.clear();
+	current_index_.reset();
+	current_url_.clear();
 }
 
 void Player::apply_replaygain_locked(BufferChain *chain) {
@@ -392,28 +729,24 @@ void Player::watchdog_loop() {
 		lk.unlock();
 
 		if(advanced) {
-			// Hot-swap happened — pop the queue front (it's now active),
-			// emit events, arm the *new* next. An advance subsumes any
-			// consumed flag that races with it (see `else if` below);
-			// the new track's arrival is the end of the old one.
 			std::unique_ptr<BufferChain> old_chain;
 			std::string old_url, new_url;
 			nlohmann::json new_meta;
 			{
 				std::lock_guard<std::mutex> g(mtx_);
-				if(!queue_.empty()) {
+				if(!queue_.empty() && current_index_) {
+					history_indices_.push_back(*current_index_);
 					old_chain = std::move(chain_);
+					old_url = current_url_;
 					chain_ = std::move(queue_.front());
 					queue_.pop_front();
-					old_url = current_url_;
+					current_index_ = upcoming_indices_.front();
+					upcoming_indices_.pop_front();
 					current_url_ = chain_ ? chain_->url() : std::string{};
 					attach_metadata_callback_locked();
 				}
 				new_meta = metadata_from_chain(chain_.get());
 				new_url = current_url_;
-				// Reset the position clock so callers see the new track
-				// start from 0 instead of inheriting the previous track's
-				// frame count.
 				if(output_) output_->set_position_frames(0);
 				maybe_arm_next_locked();
 			}
@@ -431,61 +764,57 @@ void Player::watchdog_loop() {
 			began.url = new_url;
 			began.metadata = new_meta;
 			emit(std::move(began));
-		}
-
-		else if(consumed) {
-			// True end-of-playback with no armed next. Either the queue is
-			// empty (natural stop), or a queue() call lost the race with
-			// drain (rare — fall back to teardown + restart at new head).
-			bool has_queue = false;
-			std::string finished_url;
+		} else if(consumed) {
+			std::unique_ptr<BufferChain> old_chain;
+			std::string old_url;
+			bool started = false;
+			bool repeated_one = false;
 			{
 				std::lock_guard<std::mutex> g(mtx_);
-				has_queue = !queue_.empty();
-				finished_url = current_url_;
-			}
-			if(!has_queue) {
-				PlayerEvent ended;
-				ended.kind = PlayerEvent::Kind::StreamEnded;
-				ended.status = PlaybackStatus::Stopped;
-				ended.url = finished_url;
-				emit(std::move(ended));
-				stop();
-			} else {
-				// Late-queue race: teardown + restart at new head.
-				std::unique_ptr<BufferChain> old_chain;
-				std::string old_url;
-				{
-					std::lock_guard<std::mutex> g(mtx_);
+				old_url = current_url_;
+				if(repeat_mode_ == RepeatMode::One && current_index_) {
 					old_chain = std::move(chain_);
-					old_url = current_url_;
+					if(output_) {
+						output_->close();
+						output_.reset();
+					}
+					current_url_.clear();
+					size_t idx = *current_index_;
+					current_index_.reset();
+					started = start_index_locked(idx);
+					repeated_one = started;
+				} else {
+					if(current_index_) history_indices_.push_back(*current_index_);
+					old_chain = std::move(chain_);
 					if(output_) { output_->close(); output_.reset(); }
 					current_url_.clear();
-				}
-				if(old_chain) old_chain->close();
-				PlayerEvent ended;
-				ended.kind = PlayerEvent::Kind::StreamEnded;
-				ended.status = PlaybackStatus::Stopped;
-				ended.url = old_url;
-				emit(std::move(ended));
-
-				bool started;
-				{
-					std::lock_guard<std::mutex> g(mtx_);
-					started = start_head_locked();
-				}
-				if(started) {
-					set_status(PlaybackStatus::Playing);
-					PlayerEvent began;
-					began.kind = PlayerEvent::Kind::StreamBegan;
-					began.status = PlaybackStatus::Playing;
-					began.url = current_url();
-					began.metadata = current_metadata();
-					emit(std::move(began));
-				} else {
-					set_status(PlaybackStatus::Stopped);
+					current_index_.reset();
+					if(queue_.empty() && repeat_mode_ == RepeatMode::All) {
+						prepare_repeat_all_cycle_locked();
+					}
+					if(!queue_.empty()) started = start_head_locked();
 				}
 			}
+			if(old_chain) old_chain->close();
+
+			PlayerEvent ended;
+			ended.kind = PlayerEvent::Kind::StreamEnded;
+			ended.status = started ? PlaybackStatus::Playing : PlaybackStatus::Stopped;
+			ended.url = old_url;
+			emit(std::move(ended));
+
+			if(started) {
+				set_status(PlaybackStatus::Playing);
+				PlayerEvent began;
+				began.kind = PlayerEvent::Kind::StreamBegan;
+				began.status = PlaybackStatus::Playing;
+				began.url = current_url();
+				began.metadata = current_metadata();
+				emit(std::move(began));
+			} else {
+				stop();
+			}
+			(void)repeated_one;
 		}
 	}
 }
@@ -522,7 +851,7 @@ void Player::teardown() {
 		chain = std::move(chain_);
 		output = std::move(output_);
 		q = std::move(queue_);
-		current_url_.clear();
+		clear_playlist_locked();
 	}
 	if(output) output->close();
 	if(chain) chain->close();
@@ -530,12 +859,10 @@ void Player::teardown() {
 }
 
 void Player::teardown_locked() {
-	// Caller holds mtx_. Releases + closes while briefly dropping the lock
-	// so close() (which joins decoder threads) doesn't deadlock anyone.
 	auto chain = std::move(chain_);
 	auto output = std::move(output_);
 	auto q = std::move(queue_);
-	current_url_.clear();
+	clear_playlist_locked();
 	mtx_.unlock();
 	if(output) output->close();
 	if(chain) chain->close();

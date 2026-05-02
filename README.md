@@ -52,7 +52,9 @@ Responses:
 {"id": 1, "ok": true}
 {"id": 1, "ok": false, "error": "open failed"}
 {"id": 1, "ok": true, "state": "playing", "position": 12.3,
- "duration": 156.0, "volume": 0.5, "replaygain_mode": "album_peak", "url": "..."}
+ "duration": 156.0, "volume": 0.5, "replaygain_mode": "album_peak",
+ "shuffle_mode": "off", "repeat_mode": "all", "current_queue_index": 3,
+ "from_playlist": true, "url": "..."}
 ```
 
 Async events (socket and stdin subscribers; HTTP clients get the same
@@ -73,28 +75,45 @@ stream via `GET /events` as Server-Sent Events):
 GET  /status
 GET  /metadata
 GET  /replaygain
+GET  /shuffle
+GET  /repeat
 GET  /queue
 GET  /events        text/event-stream; `data: <json>\n\n` per event,
                     `:\n\n` heartbeats every 15s of idle.
 POST /play          body: {"url": "..."}
 POST /queue         body: {"url": "..."}
+POST /load_playlist body: {"url": "...", "action": "queue|play"}
 POST /queue_clear
+POST /queue_jump    body: {"index": N}
+POST /previous
 POST /skip
 POST /pause
 POST /resume
 POST /stop
 POST /seek          body: {"seconds": N}
 POST /volume        body: {"value": 0..1}
+POST /shuffle       body: {"mode": "off|all"}
+POST /repeat        body: {"mode": "off|one|all"}
 POST /replaygain    body: {"mode": "off|track|track_peak|album|album_peak|soundcheck"}
 POST /rpc           body: full request object
 ```
+
+`play` and `queue` auto-expand local or remote `.m3u`, `.m3u8`, and
+`.pls` playlists into queue entries. HLS-style `.m3u8` files
+(`#EXT-X-MEDIA-SEQUENCE`) are passed through unchanged as stream URLs.
 
 ### Stdin (dev console)
 
 ```
 volume 0.5
 replaygain album_peak
+shuffle all
+repeat all
 play /path/to/file.flac
+queue /path/to/next.flac
+playlist /path/to/list.m3u
+queue_jump 3
+previous
 pause
 resume
 seek 30
@@ -106,6 +125,8 @@ quit
 ## Supported formats
 
 - Sources: local files plus `http://` / `https://` streams.
+- Playlist containers: `.m3u`, `.m3u8`, `.pls` with relative-path
+  resolution and HLS passthrough for streaming manifests.
 - Native decoders: FLAC via libFLAC, Opus via libopusfile, Ogg Vorbis
   via libvorbisfile, MP3 and WAV via miniaudio/libid3tag.
 - FFmpeg fallback: additional containers/codecs such as AAC / M4A and

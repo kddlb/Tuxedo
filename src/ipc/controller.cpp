@@ -1,5 +1,7 @@
 #include "ipc/controller.hpp"
 
+#include "core/playlist_parser.hpp"
+
 namespace tuxedo {
 
 namespace {
@@ -30,6 +32,27 @@ json make_err(const json &req, const std::string &msg) {
 	return out;
 }
 
+json dispatch_playlist(Player &player, const json &req, bool replace_current) {
+	if(!req.contains("url") || !req["url"].is_string())
+		return make_err(req, "request requires string `url`");
+
+	const std::string url = req["url"].get<std::string>();
+	PlaylistParseResult parsed = parse_playlist_url(url);
+	if(parsed.recognized && !parsed.passthrough_original) {
+		if(parsed.urls.empty()) return make_err(req, "playlist was empty");
+		bool ok = replace_current ? player.play(parsed.urls.front(), true) : player.queue(parsed.urls.front(), true);
+		if(!ok) return make_err(req, replace_current ? "play failed" : "queue failed");
+		for(size_t i = 1; i < parsed.urls.size(); ++i) {
+			if(!player.queue(parsed.urls[i], true)) return make_err(req, "queue failed");
+		}
+		return make_ok(req);
+	}
+
+	if(!(replace_current ? player.play(url) : player.queue(url)))
+		return make_err(req, replace_current ? "play failed" : "queue failed");
+	return make_ok(req);
+}
+
 } // namespace
 
 Controller::Controller(Player &player) : player_(player) {
@@ -47,15 +70,15 @@ json Controller::dispatch(const json &req) {
 	const std::string op = req["op"].get<std::string>();
 
 	if(op == "play") {
-		if(!req.contains("url") || !req["url"].is_string())
-			return make_err(req, "play requires string `url`");
-		if(!player_.play(req["url"].get<std::string>()))
-			return make_err(req, "play failed");
-		return make_ok(req);
+		return dispatch_playlist(player_, req, true);
 	}
 	if(op == "pause") { player_.pause(); return make_ok(req); }
 	if(op == "resume") { player_.resume(); return make_ok(req); }
 	if(op == "stop") { player_.stop(); return make_ok(req); }
+	if(op == "previous") {
+		if(!player_.previous()) return make_err(req, "previous failed");
+		return make_ok(req);
+	}
 	if(op == "seek") {
 		if(!req.contains("seconds") || !req["seconds"].is_number())
 			return make_err(req, "seek requires numeric `seconds`");
@@ -76,6 +99,10 @@ json Controller::dispatch(const json &req) {
 		out["duration"] = player_.duration_seconds();
 		out["volume"] = player_.volume();
 		out["replaygain_mode"] = replaygain_mode_name(player_.replaygain_mode());
+		out["shuffle_mode"] = shuffle_mode_name(player_.shuffle_mode());
+		out["repeat_mode"] = repeat_mode_name(player_.repeat_mode());
+		out["current_queue_index"] = player_.current_queue_index().value_or(0);
+		out["from_playlist"] = player_.current_from_playlist();
 		out["url"] = player_.current_url();
 		out["metadata"] = player_.current_metadata();
 		out["queue_length"] = player_.queue_length();
@@ -87,22 +114,59 @@ json Controller::dispatch(const json &req) {
 		return out;
 	}
 	if(op == "queue") {
-		if(!req.contains("url") || !req["url"].is_string())
-			return make_err(req, "queue requires string `url`");
-		if(!player_.queue(req["url"].get<std::string>()))
-			return make_err(req, "queue failed");
-		return make_ok(req);
+		return dispatch_playlist(player_, req, false);
+	}
+	if(op == "load_playlist") {
+		const bool replace_current = req.value("action", std::string{"queue"}) == "play";
+		return dispatch_playlist(player_, req, replace_current);
 	}
 	if(op == "queue_clear") { player_.queue_clear(); return make_ok(req); }
+	if(op == "queue_jump") {
+		if(!req.contains("index") || !req["index"].is_number_unsigned())
+			return make_err(req, "queue_jump requires unsigned `index`");
+		if(!player_.queue_jump(req["index"].get<size_t>()))
+			return make_err(req, "queue jump failed");
+		return make_ok(req);
+	}
 	if(op == "skip") {
 		if(!player_.skip()) return make_err(req, "nothing to skip");
 		return make_ok(req);
 	}
+	if(op == "shuffle") {
+		if(req.contains("mode")) {
+			if(!req["mode"].is_string())
+				return make_err(req, "shuffle requires string `mode`");
+			auto mode = shuffle_mode_from_string(req["mode"].get<std::string>());
+			if(!mode) return make_err(req, "unknown shuffle mode");
+			player_.set_shuffle_mode(*mode);
+		}
+		json out = make_ok(req);
+		out["mode"] = shuffle_mode_name(player_.shuffle_mode());
+		return out;
+	}
+	if(op == "repeat") {
+		if(req.contains("mode")) {
+			if(!req["mode"].is_string())
+				return make_err(req, "repeat requires string `mode`");
+			auto mode = repeat_mode_from_string(req["mode"].get<std::string>());
+			if(!mode) return make_err(req, "unknown repeat mode");
+			player_.set_repeat_mode(*mode);
+		}
+		json out = make_ok(req);
+		out["mode"] = repeat_mode_name(player_.repeat_mode());
+		return out;
+	}
 	if(op == "queue_list") {
 		json out = make_ok(req);
+		out["current_index"] = player_.current_queue_index().value_or(0);
+		out["shuffle_mode"] = shuffle_mode_name(player_.shuffle_mode());
+		out["repeat_mode"] = repeat_mode_name(player_.repeat_mode());
 		json arr = json::array();
 		for(const auto &e : player_.queue_snapshot()) {
 			json o;
+			o["index"] = e.index;
+			o["current"] = e.current;
+			o["from_playlist"] = e.from_playlist;
 			o["url"] = e.url;
 			o["duration"] = e.duration_seconds;
 			o["sample_rate"] = e.format.sample_rate;

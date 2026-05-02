@@ -57,16 +57,29 @@ bool HttpServer::start() {
 		json req{{"op", "replaygain"}};
 		reply(res, ctl_.dispatch(req));
 	});
+	srv_->Get("/shuffle", [this](const httplib::Request &, httplib::Response &res) {
+		json req{{"op", "shuffle"}};
+		reply(res, ctl_.dispatch(req));
+	});
+	srv_->Get("/repeat", [this](const httplib::Request &, httplib::Response &res) {
+		json req{{"op", "repeat"}};
+		reply(res, ctl_.dispatch(req));
+	});
 	srv_->Post("/play", wrap_op("play"));
 	srv_->Post("/pause", wrap_op("pause"));
 	srv_->Post("/resume", wrap_op("resume"));
 	srv_->Post("/stop", wrap_op("stop"));
+	srv_->Post("/previous", wrap_op("previous"));
 	srv_->Post("/seek", wrap_op("seek"));
 	srv_->Post("/volume", wrap_op("volume"));
 	srv_->Post("/queue", wrap_op("queue"));
 	srv_->Post("/queue_clear", wrap_op("queue_clear"));
+	srv_->Post("/queue_jump", wrap_op("queue_jump"));
 	srv_->Post("/skip", wrap_op("skip"));
 	srv_->Post("/replaygain", wrap_op("replaygain"));
+	srv_->Post("/shuffle", wrap_op("shuffle"));
+	srv_->Post("/repeat", wrap_op("repeat"));
+	srv_->Post("/load_playlist", wrap_op("load_playlist"));
 	srv_->Get("/queue", [this](const httplib::Request &, httplib::Response &res) {
 		json req{{"op", "queue_list"}};
 		reply(res, ctl_.dispatch(req));

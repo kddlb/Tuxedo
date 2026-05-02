@@ -123,6 +123,7 @@ core_inc = include_directories('src')
 
 core_sources = files(
   'src/core/audio_chunk.cpp',
+  'src/core/playlist_parser.cpp',
   'src/core/player.cpp',
   'src/core/replaygain.cpp',
   'src/core/chain/node.cpp',

@@ -36,7 +36,7 @@ json build_request(const std::string &line) {
 	}
 	if(cmd == "pause" || cmd == "resume" || cmd == "stop" || cmd == "status"
 	   || cmd == "metadata" || cmd == "queue_clear" || cmd == "queue_list"
-	   || cmd == "skip") {
+	   || cmd == "skip" || cmd == "previous") {
 		req["op"] = cmd;
 		return req;
 	}
@@ -71,6 +71,30 @@ json build_request(const std::string &line) {
 		if(iss >> mode) req["mode"] = mode;
 		return req;
 	}
+	if(cmd == "shuffle" || cmd == "repeat") {
+		req["op"] = cmd;
+		std::string mode;
+		if(iss >> mode) req["mode"] = mode;
+		return req;
+	}
+	if(cmd == "queue_jump") {
+		size_t index = 0;
+		if(!(iss >> index)) return {};
+		req["op"] = "queue_jump";
+		req["index"] = index;
+		return req;
+	}
+	if(cmd == "load_playlist" || cmd == "playlist") {
+		std::string url;
+		std::getline(iss, url);
+		size_t i = 0;
+		while(i < url.size() && std::isspace(static_cast<unsigned char>(url[i]))) ++i;
+		url.erase(0, i);
+		if(url.empty()) return {};
+		req["op"] = "load_playlist";
+		req["url"] = url;
+		return req;
+	}
 	return {};
 }
 
@@ -83,10 +107,12 @@ void print_response(const json &resp) {
 			          << " duration=" << resp.value("duration", 0.0)
 			          << " volume=" << resp.value("volume", 0.0)
 			          << " replaygain=" << resp.value("replaygain_mode", std::string{"off"})
+			          << " shuffle=" << resp.value("shuffle_mode", std::string{"off"})
+			          << " repeat=" << resp.value("repeat_mode", std::string{"off"})
 			          << " url=" << resp.value("url", std::string{})
 			          << '\n';
 		} else if(resp.contains("mode")) {
-			std::cout << "replaygain " << resp["mode"].get<std::string>() << '\n';
+			std::cout << "mode " << resp["mode"].get<std::string>() << '\n';
 		} else {
 			std::cout << "ok\n";
 		}
