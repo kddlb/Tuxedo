@@ -129,6 +129,16 @@ bool FlacDecoder::open(Source *source) {
 		source_->seek(0, SEEK_SET);
 	}
 
+	bool is_ogg_flac = false;
+	uint8_t hdr[4];
+	if(source_->read(hdr, 4) != 4) {
+		return false;
+	}
+	source_->seek(0, SEEK_SET);
+	if(memcmp(hdr, "OggS", 4) == 0) {
+		is_ogg_flac = true;
+	}
+
 	dec_ = FLAC__stream_decoder_new();
 	if(!dec_) return false;
 
@@ -139,13 +149,26 @@ bool FlacDecoder::open(Source *source) {
 	FLAC__stream_decoder_set_metadata_respond(d, FLAC__METADATA_TYPE_VORBIS_COMMENT);
 	FLAC__stream_decoder_set_metadata_respond(d, FLAC__METADATA_TYPE_PICTURE);
 
-	auto init = FLAC__stream_decoder_init_stream(
-	    d, read_cb,
-	    source_->seekable() ? seek_cb : nullptr,
-	    source_->seekable() ? tell_cb : nullptr,
-	    source_->seekable() ? length_cb : nullptr,
-	    source_->seekable() ? eof_cb : nullptr,
-	    write_cb, metadata_cb, error_cb, this);
+	FLAC__StreamDecoderInitStatus init;
+
+	if(is_ogg_flac) {
+		FLAC__stream_decoder_set_decode_chained_stream(d, true);
+		init = FLAC__stream_decoder_init_ogg_stream(
+		    d, read_cb,
+			source_->seekable() ? seek_cb : nullptr,
+			source_->seekable() ? tell_cb : nullptr,
+			source_->seekable() ? length_cb : nullptr,
+			source_->seekable() ? eof_cb : nullptr,
+			write_cb, metadata_cb, error_cb, this);
+	} else {
+		init = FLAC__stream_decoder_init_stream(
+		    d, read_cb,
+		    source_->seekable() ? seek_cb : nullptr,
+		    source_->seekable() ? tell_cb : nullptr,
+		    source_->seekable() ? length_cb : nullptr,
+		    source_->seekable() ? eof_cb : nullptr,
+		    write_cb, metadata_cb, error_cb, this);
+	}
 
 	if(init != FLAC__STREAM_DECODER_INIT_STATUS_OK) return false;
 	if(!FLAC__stream_decoder_process_until_end_of_metadata(d)) return false;
