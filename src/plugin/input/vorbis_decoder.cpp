@@ -148,6 +148,14 @@ void VorbisDecoder::parse_tags() {
 
 bool VorbisDecoder::read(AudioChunk &out, size_t max_frames) {
 	if(!inited_ || max_frames == 0) return false;
+
+	if(currentSection != lastSection) {
+		parse_info();
+		parse_tags();
+		if(metadata_changed_cb_) metadata_changed_cb_();
+	}
+	lastSection = currentSection;
+
 	const uint32_t ch = props_.format.channels;
 	if(ch == 0) return false;
 
@@ -158,8 +166,7 @@ bool VorbisDecoder::read(AudioChunk &out, size_t max_frames) {
 	const int want = static_cast<int>(std::min<size_t>(max_frames, kMaxRead));
 
 	float **planar = nullptr;
-	int bitstream = 0;
-	long got = ov_read_float(cast(vf_), &planar, want, &bitstream);
+	long got = ov_read_float(cast(vf_), &planar, want, &currentSection);
 	if(got <= 0) return false;
 
 	const size_t frames = static_cast<size_t>(got);
@@ -199,6 +206,10 @@ nlohmann::json VorbisDecoder::metadata() const {
 		};
 	}
 	return out;
+}
+
+void VorbisDecoder::set_metadata_changed_callback(MetadataChangedCallback cb) {
+	metadata_changed_cb_ = std::move(cb);
 }
 
 } // namespace tuxedo

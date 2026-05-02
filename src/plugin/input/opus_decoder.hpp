@@ -27,6 +27,7 @@ public:
 	int64_t seek(int64_t frame) override;
 
 	nlohmann::json metadata() const override;
+	void set_metadata_changed_callback(MetadataChangedCallback cb) override;
 
 	// Accessor used by the C callback shims.
 	Source *source() { return source_; }
@@ -55,10 +56,16 @@ private:
 
 	int64_t current_frame_ = 0;
 
+	int currentSection = 0;
+	int lastSection = 0;
+
 	// Accumulated metadata.
 	nlohmann::json vorbis_tags_ = nlohmann::json::object();
 	std::string picture_mime_;
 	std::vector<uint8_t> picture_bytes_;
+
+	// Interval metadata updated
+	MetadataChangedCallback metadata_changed_cb_;
 
 	// R128 gain values in q7.8 centibels (raw from Opus header / tags).
 	int32_t r128_header_gain_q8_ = 0;
