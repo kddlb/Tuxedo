@@ -216,7 +216,8 @@ tuxedo is an incremental port of Cog's architecture. **When the user
 asks for a next step** — "what's next?", "keep going", "continue the
 project", "anything else to port?" — **always run an Explore agent
 over `/Users/kevin/src/Cog` before recommending**. The "Port status"
-catalog below is the running record but lags Cog's upstream; check
+catalog below is a summary and may lag; `COG_PORT_TODO.md` is the
+living tracking file for ported and unported Cog features. Check
 `Cog/Plugins/`, `Cog/Audio/Chain/`, and `Cog/Audio/Output/` for new
 or moved components, and read the relevant headers to get the
 library dependency and API surface before scoping the work.
