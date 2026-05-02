@@ -75,6 +75,14 @@ std::string resolve_relative_url(const std::string &entry, const std::string &ba
 std::string read_all_text(const std::string &url) {
 	auto source = PluginRegistry::instance().source_for_url(url);
 	if(!source || !source->open(url)) return {};
+	auto mime_type = source->mime_type();
+	if(mime_type.length()) {
+		if(mime_type != "audio/x-scpls" &&
+		   mime_type != "application/pls" &&
+		   mime_type != "audio/x-mpegurl" &&
+		   mime_type != "audio/mpegurl")
+			return {};
+	}
 
 	std::string out;
 	char buf[4096];
