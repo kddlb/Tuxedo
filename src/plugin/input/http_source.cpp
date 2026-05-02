@@ -123,7 +123,6 @@ bool HttpSource::seek(int64_t offset, int whence) {
 	int64_t absolute = 0;
 	{
 		std::lock_guard<std::mutex> g(mtx_);
-		if(!seekable_) return false;
 		switch(whence) {
 			case SEEK_SET:
 				absolute = offset;
@@ -163,6 +162,7 @@ bool HttpSource::seek(int64_t offset, int whence) {
 				return true;
 			}
 		}
+		if(!seekable_) return false;
 	}
 
 	stop_transfer();
