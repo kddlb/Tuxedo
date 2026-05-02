@@ -15,6 +15,7 @@ extern "C" {
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace tuxedo {
@@ -119,6 +120,8 @@ FfmpegDecoder::~FfmpegDecoder() { close(); }
 bool FfmpegDecoder::open(Source *source) {
 	close();
 	source_ = source;
+	static std::once_flag network_once;
+	std::call_once(network_once, [] { avformat_network_init(); });
 
 	unsigned char *avio_buffer = static_cast<unsigned char *>(av_malloc(kAvioBufferSize));
 	if(!avio_buffer) return false;
@@ -135,8 +138,9 @@ bool FfmpegDecoder::open(Source *source) {
 	if(!format_ctx_) return false;
 	format_ctx_->pb = io_ctx_;
 	format_ctx_->flags |= AVFMT_FLAG_CUSTOM_IO;
+	const char *input_url = source_->url().empty() ? nullptr : source_->url().c_str();
 
-	if(avformat_open_input(&format_ctx_, nullptr, nullptr, nullptr) < 0) return false;
+	if(avformat_open_input(&format_ctx_, input_url, nullptr, nullptr) < 0) return false;
 	if(avformat_find_stream_info(format_ctx_, nullptr) < 0) return false;
 
 	stream_index_ = av_find_best_stream(format_ctx_, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);

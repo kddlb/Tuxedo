@@ -21,19 +21,23 @@ public:
 
 	void register_source(const std::string &scheme, SourceFactory f);
 	void register_decoder(const std::string &ext, DecoderFactory f);
+	void register_decoder_mime(const std::string &mime, DecoderFactory f);
 	void register_fallback_decoder(DecoderFactory f);
 
 	SourcePtr source_for_url(const std::string &url);
 	DecoderPtr decoder_for_extension(const std::string &ext);
+	DecoderPtr decoder_for_mime(const std::string &mime);
 	std::vector<DecoderPtr> fallback_decoders();
 
 	static std::string extension_of(const std::string &path);
 	static std::string scheme_of(const std::string &url);
+	static std::string normalize_mime_type(const std::string &mime);
 
 private:
 	PluginRegistry() = default;
 	std::unordered_map<std::string, SourceFactory> sources_;
 	std::unordered_map<std::string, DecoderFactory> decoders_;
+	std::unordered_map<std::string, DecoderFactory> mime_decoders_;
 	std::vector<DecoderFactory> fallback_decoders_;
 };
 

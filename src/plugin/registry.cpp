@@ -14,6 +14,17 @@
 
 namespace tuxedo {
 
+namespace {
+
+std::string lowercase_copy(std::string value) {
+	std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+	return value;
+}
+
+} // namespace
+
 PluginRegistry &PluginRegistry::instance() {
 	static PluginRegistry r;
 	return r;
@@ -24,9 +35,13 @@ void PluginRegistry::register_source(const std::string &scheme, SourceFactory f)
 }
 
 void PluginRegistry::register_decoder(const std::string &ext, DecoderFactory f) {
-	std::string k = ext;
-	std::transform(k.begin(), k.end(), k.begin(), [](unsigned char c) { return std::tolower(c); });
-	decoders_[k] = std::move(f);
+	decoders_[lowercase_copy(ext)] = std::move(f);
+}
+
+void PluginRegistry::register_decoder_mime(const std::string &mime, DecoderFactory f) {
+	std::string key = normalize_mime_type(mime);
+	if(key.empty()) return;
+	mime_decoders_[key] = std::move(f);
 }
 
 void PluginRegistry::register_fallback_decoder(DecoderFactory f) {
@@ -43,10 +58,15 @@ SourcePtr PluginRegistry::source_for_url(const std::string &url) {
 }
 
 DecoderPtr PluginRegistry::decoder_for_extension(const std::string &ext) {
-	std::string k = ext;
-	std::transform(k.begin(), k.end(), k.begin(), [](unsigned char c) { return std::tolower(c); });
-	auto it = decoders_.find(k);
+	auto it = decoders_.find(lowercase_copy(ext));
 	return it == decoders_.end() ? nullptr : it->second();
+}
+
+DecoderPtr PluginRegistry::decoder_for_mime(const std::string &mime) {
+	std::string key = normalize_mime_type(mime);
+	if(key.empty()) return nullptr;
+	auto it = mime_decoders_.find(key);
+	return it == mime_decoders_.end() ? nullptr : it->second();
 }
 
 std::vector<DecoderPtr> PluginRegistry::fallback_decoders() {
@@ -79,6 +99,16 @@ std::string PluginRegistry::scheme_of(const std::string &url) {
 	return url.substr(0, colon);
 }
 
+std::string PluginRegistry::normalize_mime_type(const std::string &mime) {
+	size_t start = 0;
+	while(start < mime.size() && std::isspace(static_cast<unsigned char>(mime[start]))) ++start;
+	size_t end = mime.find(';', start);
+	if(end == std::string::npos) end = mime.size();
+	while(end > start && std::isspace(static_cast<unsigned char>(mime[end - 1]))) --end;
+	if(start >= end) return {};
+	return lowercase_copy(mime.substr(start, end - start));
+}
+
 void register_builtin_plugins() {
 	auto &r = PluginRegistry::instance();
 	r.register_source("file", [] { return SourcePtr(new FileSource()); });
@@ -91,12 +121,21 @@ void register_builtin_plugins() {
 	for(const char *ext : {"wav", "wave"}) {
 		r.register_decoder(ext, ma_factory);
 	}
+	for(const char *mime : {"audio/wav", "audio/wave", "audio/x-wav", "audio/vnd.wave"}) {
+		r.register_decoder_mime(mime, ma_factory);
+	}
 
 	// libFLAC takes over .flac — lossless path, Vorbis-comment metadata.
-	r.register_decoder("flac", [] { return DecoderPtr(new FlacDecoder()); });
+	auto flac_factory = [] { return DecoderPtr(new FlacDecoder()); };
+	r.register_decoder("flac", flac_factory);
+	for(const char *mime : {"audio/flac", "audio/x-flac", "application/flac", "application/x-flac"}) {
+		r.register_decoder_mime(mime, flac_factory);
+	}
 
 	// libopusfile for .opus — native Vorbis-comment metadata + R128 gains.
-	r.register_decoder("opus", [] { return DecoderPtr(new OpusDecoder()); });
+	auto opus_factory = [] { return DecoderPtr(new OpusDecoder()); };
+	r.register_decoder("opus", opus_factory);
+	r.register_decoder_mime("audio/opus", opus_factory);
 
 	// libvorbisfile for Ogg Vorbis — Vorbis-comment metadata +
 	// METADATA_BLOCK_PICTURE album art. .oga routes here too.
@@ -104,14 +143,25 @@ void register_builtin_plugins() {
 	for(const char *ext : {"ogg", "oga"}) {
 		r.register_decoder(ext, vorbis_factory);
 	}
+	r.register_decoder_mime("audio/vorbis", vorbis_factory);
 
 	// miniaudio/dr_mp3 for MP3 audio + libid3tag for ID3v1/v2 tags,
 	// including APIC album art and TXXX ReplayGain entries.
-	r.register_decoder("mp3", [] { return DecoderPtr(new Mp3Decoder()); });
+	auto mp3_factory = [] { return DecoderPtr(new Mp3Decoder()); };
+	r.register_decoder("mp3", mp3_factory);
+	for(const char *mime : {"audio/mpeg", "audio/mp3"}) {
+		r.register_decoder_mime(mime, mp3_factory);
+	}
 
 	// FFmpeg is the broad fallback path for streams, extensionless URLs,
 	// and formats without a dedicated native decoder.
-	r.register_fallback_decoder([] { return DecoderPtr(new FfmpegDecoder()); });
+	auto ffmpeg_factory = [] { return DecoderPtr(new FfmpegDecoder()); };
+	for(const char *mime : {"application/ogg", "audio/ogg",
+	                        "application/vnd.apple.mpegurl", "application/x-mpegurl",
+	                        "audio/mpegurl", "audio/x-mpegurl"}) {
+		r.register_decoder_mime(mime, ffmpeg_factory);
+	}
+	r.register_fallback_decoder(ffmpeg_factory);
 }
 
 } // namespace tuxedo

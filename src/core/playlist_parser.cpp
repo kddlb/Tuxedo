@@ -77,11 +77,14 @@ std::string read_all_text(const std::string &url) {
 	if(!source || !source->open(url)) return {};
 	auto mime_type = source->mime_type();
 	if(mime_type.length()) {
+		mime_type = PluginRegistry::normalize_mime_type(mime_type);
 		if(mime_type != "audio/x-scpls" &&
 		   mime_type != "application/pls" &&
 		   mime_type != "audio/x-mpegurl" &&
-		   mime_type != "audio/mpegurl")
+		   mime_type != "audio/mpegurl") {
+			source->close();
 			return {};
+		}
 	}
 
 	std::string out;
@@ -142,8 +145,14 @@ PlaylistParseResult parse_pls(const std::string &url, const std::string &text) {
 
 PlaylistParseResult parse_playlist_url(const std::string &url) {
 	PlaylistParseResult result;
-	std::string text = read_all_text(url);
 	std::string ext = lowercase(PluginRegistry::extension_of(url));
+	std::string scheme = lowercase(PluginRegistry::scheme_of(url));
+	if(ext == "m3u8" && (scheme == "http" || scheme == "https")) {
+		result.recognized = true;
+		result.passthrough_original = true;
+		return result;
+	}
+	std::string text = read_all_text(url);
 	if(ext == "m3u" || ext == "m3u8") return parse_m3u(url, text);
 	if(ext == "pls") return parse_pls(url, text);
 	return result;
