@@ -13,6 +13,8 @@ namespace tuxedo {
 
 namespace {
 
+enum { rewind_threshold_ = 5000 };
+
 std::string trim_copy(std::string s) {
 	while(!s.empty() && (s.back() == '\r' || s.back() == '\n' ||
 	                     std::isspace(static_cast<unsigned char>(s.back())))) {
@@ -138,6 +140,29 @@ bool HttpSource::seek(int64_t offset, int whence) {
 		}
 		if(absolute < 0) return false;
 		if(content_length_ >= 0 && absolute > content_length_) return false;
+	}
+
+	{
+		std::lock_guard<std::mutex> g(mtx_);
+		if(absolute == position_) return true;
+		if(absolute < position_) {
+			/* Support limited rewinding */
+			int64_t relative = position_ - absolute;
+			if(relative <= rewind_threshold_) {
+				read_pos_ -= relative;
+				if(read_pos_ > buffer_.size()) read_pos_ += buffer_.size();
+				buffered_ += relative;
+				return true;
+			}
+		} else if(absolute > position_) {
+			/* Support limited skipping */
+			int64_t relative = absolute - position_;
+			if((size_t)relative <= buffered_) {
+				read_pos_ = (read_pos_ + relative) % buffer_.size();
+				buffered_ -= relative;
+				return true;
+			}
+		}
 	}
 
 	stop_transfer();
@@ -386,7 +411,7 @@ bool HttpSource::push_audio_bytes(const uint8_t *data, size_t len) {
 	size_t written = 0;
 	while(written < len) {
 		std::unique_lock<std::mutex> lk(mtx_);
-		cv_.wait(lk, [this] { return buffered_ < buffer_.size() || stop_requested_; });
+		cv_.wait(lk, [this] { return buffered_ + rewind_threshold_ < buffer_.size() || stop_requested_; });
 		if(stop_requested_) return false;
 
 		size_t free_space = buffer_.size() - buffered_;
