@@ -155,7 +155,7 @@ Default is `album_peak`.
 On Arch Linux:
 
 ```
-sudo pacman -S base-devel meson ninja pkgconf flac opusfile libvorbis libid3tag curl ffmpeg alsa-lib libpulse
+sudo pacman -S base-devel meson ninja pkgconf flac opusfile libvorbis libmpcdec libid3tag curl ffmpeg alsa-lib libpulse
 ```
 
 ## Status
