@@ -41,7 +41,6 @@ void Node::write_chunk(AudioChunk chunk) {
 	});
 	if(!should_continue_.load()) return;
 
-	if(!peek_format_.valid()) peek_format_ = chunk.format();
 	buffered_frames_ += chunk.frame_count();
 	buffered_seconds_ += chunk.duration();
 	buffer_.push_back(std::move(chunk));
@@ -81,10 +80,10 @@ void Node::flush_buffer() {
 bool Node::peek_format(StreamFormat &out) {
 	std::unique_lock<std::mutex> lk(mtx_);
 	not_empty_.wait(lk, [this] {
-		return peek_format_.valid() || end_of_stream_.load() || !should_continue_.load();
+		return buffer_.size() || end_of_stream_.load() || !should_continue_.load();
 	});
-	if(!peek_format_.valid()) return false;
-	out = peek_format_;
+	if(!buffer_.size()) return false;
+	out = buffer_.front().format();
 	return true;
 }
 
