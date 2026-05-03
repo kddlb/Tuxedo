@@ -253,6 +253,9 @@ bool FlacDecoder::read(AudioChunk &out, size_t max_frames) {
 		block_frames_consumed_ = 0;
 		while(block_frames_ == 0) {
 			auto state = FLAC__stream_decoder_get_state(d);
+			if(state == FLAC__STREAM_DECODER_END_OF_LINK) {
+				if(!FLAC__stream_decoder_finish_link(d)) return false;
+			}
 			if(state == FLAC__STREAM_DECODER_END_OF_STREAM) return false;
 			if(abort_) return false;
 			if(!FLAC__stream_decoder_process_single(d)) return false;
