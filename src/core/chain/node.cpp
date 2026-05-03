@@ -37,12 +37,13 @@ void Node::write_chunk(AudioChunk chunk) {
 
 	std::unique_lock<std::mutex> lk(mtx_);
 	not_full_.wait(lk, [this] {
-		return !should_continue_.load() || buffered_frames_ < kMaxBufferedFrames;
+		return !should_continue_.load() || (buffered_frames_ < kMaxBufferedFrames && buffered_seconds_ < kMaxBufferedSeconds);
 	});
 	if(!should_continue_.load()) return;
 
 	if(!peek_format_.valid()) peek_format_ = chunk.format();
 	buffered_frames_ += chunk.frame_count();
+	buffered_seconds_ += chunk.duration();
 	buffer_.push_back(std::move(chunk));
 	not_empty_.notify_one();
 }
@@ -63,6 +64,7 @@ AudioChunk Node::read_chunk(size_t max_frames) {
 		out = front.remove_frames(max_frames);
 	}
 	buffered_frames_ -= out.frame_count();
+	buffered_seconds_ -= out.duration();
 	not_full_.notify_one();
 	return out;
 }
@@ -71,6 +73,7 @@ void Node::flush_buffer() {
 	std::lock_guard<std::mutex> g(mtx_);
 	buffer_.clear();
 	buffered_frames_ = 0;
+	buffered_seconds_ = 0;
 	not_full_.notify_all();
 	not_empty_.notify_all();
 }
@@ -92,8 +95,7 @@ size_t Node::frames_buffered() {
 
 double Node::seconds_buffered() {
 	std::lock_guard<std::mutex> g(mtx_);
-	if(!peek_format_.valid()) return 0.0;
-	return double(buffered_frames_) / peek_format_.sample_rate;
+	return buffered_seconds_;
 }
 
 } // namespace tuxedo

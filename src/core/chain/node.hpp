@@ -18,6 +18,7 @@ namespace tuxedo {
 class Node {
 public:
 	static constexpr size_t kMaxBufferedFrames = 4 * 1024 * 1024 / sizeof(float);
+	static constexpr float kMaxBufferedSeconds = 10.0;
 
 	explicit Node(Node *previous = nullptr);
 	virtual ~Node();
@@ -72,7 +73,7 @@ private:
 	std::condition_variable not_empty_;
 	std::deque<AudioChunk> buffer_;
 	size_t buffered_frames_ = 0;
-	StreamFormat peek_format_{};
+	double buffered_seconds_ = 0;
 };
 
 } // namespace tuxedo
