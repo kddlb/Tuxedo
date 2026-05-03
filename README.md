@@ -146,6 +146,7 @@ Default is `album_peak`.
 - `libFLAC` (`brew install flac`).
 - `libopusfile` (`brew install opusfile`).
 - `libvorbisfile` / `libvorbis`.
+- `libmpcdec` (`brew install musepack`).
 - `libid3tag`.
 - `libcurl`.
 - FFmpeg libraries: `libavformat`, `libavcodec`, `libavutil`,
