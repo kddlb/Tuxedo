@@ -1,7 +1,10 @@
 # tuxedo
 
-Minimal headless audio engine, cross-platform (macOS + Linux),
-architecture modelled on [Cog](https://github.com/losnoco/Cog).
+Minimal headless audio engine, cross-platform (macOS + Linux).
+Tuxedo is a cross-platform C++ port of the playback engine and plugin
+architecture from [Cog](https://github.com/losnoco/Cog), the macOS
+audio player implemented in Objective-C and Swift, repackaged as a
+standalone headless daemon.
 
 ## Build
 
@@ -128,7 +131,8 @@ quit
 
 ## Supported formats
 
-- Sources: local files plus `http://` / `https://` streams.
+- Sources: local files, `http://` / `https://` streams, and archive
+  entries via `unpack://libarchive|<archive-path-length>|<archive-path>|<entry-path>`.
 - Playlist containers: `.m3u`, `.m3u8`, `.pls` with relative-path
   resolution and HLS passthrough for streaming manifests.
 - Native decoders: FLAC via libFLAC, Opus via libopusfile, Ogg Vorbis

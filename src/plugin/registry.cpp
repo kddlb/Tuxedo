@@ -1,6 +1,8 @@
 #include "plugin/registry.hpp"
 
+#include "core/archive_url.hpp"
 #include "plugin/input/cue_decoder.hpp"
+#include "plugin/input/archive_source.hpp"
 #include "plugin/input/file_source.hpp"
 #include "plugin/input/ffmpeg_decoder.hpp"
 #include "plugin/input/flac_decoder.hpp"
@@ -81,6 +83,10 @@ std::vector<DecoderPtr> PluginRegistry::fallback_decoders() {
 }
 
 std::string PluginRegistry::extension_of(const std::string &path) {
+	ArchiveUrlParts archive_parts;
+	if(parse_archive_url(path, archive_parts)) {
+		return extension_of(archive_parts.entry_path);
+	}
 	size_t end = path.find_first_of("?#");
 	if(end == std::string::npos) end = path.size();
 	auto dot = path.rfind('.', end);
@@ -116,6 +122,7 @@ void register_builtin_plugins() {
 	r.register_source("file", [] { return SourcePtr(new FileSource()); });
 	r.register_source("http", [] { return SourcePtr(new HttpSource()); });
 	r.register_source("https", [] { return SourcePtr(new HttpSource()); });
+	r.register_source("unpack", [] { return SourcePtr(new ArchiveSource()); });
 
 	auto cue_factory = [] { return DecoderPtr(new CueDecoder()); };
 	r.register_decoder("cue", cue_factory);

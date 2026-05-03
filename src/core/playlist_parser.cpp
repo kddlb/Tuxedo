@@ -1,3 +1,4 @@
+#include "core/archive_url.hpp"
 #include "core/cue_sheet.hpp"
 #include "core/playlist_parser.hpp"
 
@@ -61,6 +62,9 @@ std::string resolve_relative_url(const std::string &entry, const std::string &ba
 	if(base_scheme == "http" || base_scheme == "https") {
 		if(!path.empty() && path[0] == '/') return origin_of(base_url) + path + fragment;
 		return directory_of_url(base_url) + path + fragment;
+	}
+	if(base_scheme == "unpack") {
+		return resolve_archive_relative_url(path, base_url) + fragment;
 	}
 
 	std::replace(path.begin(), path.end(), '\\', '/');

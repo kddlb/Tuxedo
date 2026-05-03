@@ -114,12 +114,14 @@ if not taglib_dep.found()
   endif
 endif
 
+libarchive_dep = dependency('libarchive')
+
 # Single-header vendored libraries.
 miniaudio_inc = include_directories('vendor/miniaudio')
 json_inc = include_directories('vendor/json', is_system: true)
 httplib_inc = include_directories('vendor/httplib', is_system: true)
 
-deps = [thread_dep, flac_dep, opusfile_dep, vorbisfile_dep, id3tag_dep, mpcdec_dep, taglib_dep]
+deps = [thread_dep, flac_dep, opusfile_dep, vorbisfile_dep, id3tag_dep, mpcdec_dep, taglib_dep, libarchive_dep]
 curl_dep = dependency('libcurl')
 avformat_dep = dependency('libavformat')
 avcodec_dep = dependency('libavcodec')
@@ -150,6 +152,7 @@ endif
 core_inc = include_directories('src')
 
 core_sources = files(
+  'src/core/archive_url.cpp',
   'src/core/audio_chunk.cpp',
   'src/core/cue_sheet.cpp',
   'src/core/media_probe.cpp',
@@ -163,6 +166,7 @@ core_sources = files(
   'src/core/chain/converter_node.cpp',
   'src/core/chain/buffer_chain.cpp',
   'src/plugin/registry.cpp',
+  'src/plugin/input/archive_source.cpp',
   'src/plugin/input/cue_decoder.cpp',
   'src/plugin/input/ffmpeg_decoder.cpp',
   'src/plugin/input/file_source.cpp',

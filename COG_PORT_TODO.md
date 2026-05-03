@@ -39,7 +39,7 @@ GUI-only Cog features are intentionally omitted. Items are grouped by subsystem 
 - [x] M3U / M3U8 playlist expansion (`Cog/Plugins/M3u/*` -> `src/core/playlist_parser.*`, `src/ipc/controller.cpp`)
 - [x] PLS playlist expansion (`Cog/Plugins/Pls/*` -> `src/core/playlist_parser.*`, `src/ipc/controller.cpp`)
 - [x] Cue sheet virtual-track support (`Cog/Plugins/CueSheet/*` -> `src/core/cue_sheet.*`, `src/plugin/input/cue_decoder.*`, `src/core/playlist_parser.*`, `src/core/media_probe.*`)
-- [ ] Archive-backed sources (`Cog/Plugins/ArchiveSource/*`; no Tuxedo equivalent)
+- [x] Archive-backed sources (`Cog/Plugins/ArchiveSource/*` -> `src/plugin/input/archive_source.*`, `src/core/archive_url.*`)
 - [ ] `SilenceDecoder` (`Cog/Plugins/SilenceDecoder/*`; no Tuxedo equivalent)
 - [ ] Playlist/model layer beyond the daemon queue (`Cog/Playlist/PlaylistController.*`, `PlaylistLoader.*`, `XmlContainer.*`; no Tuxedo equivalent)
 

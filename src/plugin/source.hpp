@@ -1,6 +1,6 @@
 // Source: byte-stream I/O interface. Mirrors Cog's CogSource protocol.
 // Decoders read through a Source rather than directly from the
-// filesystem, so we can plug in http/smb/archive sources later without
+// filesystem, so we can plug in http/archive/other sources without
 // touching the decoders.
 #pragma once
 
