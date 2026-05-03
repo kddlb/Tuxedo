@@ -80,7 +80,7 @@ private:
 	size_t block_frames_ = 0;
 	size_t block_frames_consumed_ = 0;
 
-	int64_t current_frame_ = 0;
+	double current_time_ = 0;
 
 	// Accumulated Vorbis comments. Each key maps to an array of values
 	// (single-valued tags still land in a one-element array, for

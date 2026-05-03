@@ -202,7 +202,7 @@ void FlacDecoder::close() {
 	block_.clear();
 	block_frames_ = 0;
 	block_frames_consumed_ = 0;
-	current_frame_ = 0;
+	current_time_ = 0;
 	props_ = {};
 	file_size_ = 0;
 	bits_per_sample_ = 0;
@@ -272,8 +272,8 @@ bool FlacDecoder::read(AudioChunk &out, size_t max_frames) {
 	block_frames_consumed_ += take;
 
 	out = AudioChunk(props_.format, std::move(samples),
-	                 static_cast<double>(current_frame_) / props_.format.sample_rate);
-	current_frame_ += static_cast<int64_t>(take);
+	                 current_time_);
+	current_time_ += static_cast<int64_t>(take) / (double)props_.format.sample_rate;
 	return true;
 }
 
@@ -284,7 +284,8 @@ int64_t FlacDecoder::seek(int64_t frame) {
 		FLAC__stream_decoder_flush(d);
 		return -1;
 	}
-	current_frame_ = frame;
+	/* Due to FLAC's weird nature, this can't be perfect :( */
+	current_time_ = (double)frame / (double)props_.format.sample_rate;
 	block_frames_ = 0;
 	block_frames_consumed_ = 0;
 	return frame;
