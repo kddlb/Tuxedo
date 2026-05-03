@@ -39,13 +39,21 @@ void ConverterNode::process() {
 	if(!previous_->peek_format(in_fmt)) return;
 
 	const StreamFormat out_fmt = target_ ? *target_ : in_fmt;
-	const bool identity = (!target_) || (*target_ == in_fmt);
+
+	bool flush_for_new_format = false;
+
+	new_format:
+	if(!previous_->peek_format(in_fmt)) return;
+	const bool identity = in_fmt == out_fmt;
 
 	// Identity passthrough: forward chunks unchanged. Covers the
 	// common same-format case with zero allocation, zero extra copies.
 	if(identity) {
 		while(should_continue()) {
 			if(flush_requested_.exchange(false)) flush_buffer();
+			StreamFormat new_fmt{};
+			if(!previous_->peek_format(new_fmt)) break;
+			if(new_fmt != in_fmt) goto new_format;
 			auto chunk = previous_->read_chunk(4096);
 			if(chunk.empty()) break;
 			const float gain = gain_.load();
@@ -77,6 +85,13 @@ void ConverterNode::process() {
 			ma_data_converter_reset(conv);
 			leftover_in.clear();
 			flush_buffer();
+		}
+
+		StreamFormat new_fmt{};
+		if(!previous_->peek_format(new_fmt)) return;
+		if(new_fmt != in_fmt) {
+			flush_for_new_format = true;
+			break;
 		}
 
 		AudioChunk in_chunk = previous_->read_chunk(4096);
@@ -154,6 +169,16 @@ void ConverterNode::process() {
 			for(float &sample : out_samples) sample *= gain;
 		}
 		write_chunk(AudioChunk(out_fmt, std::move(out_samples), 0.0));
+	}
+
+	if(flush_for_new_format && should_continue()) {
+		if(converter_) {
+			ma_data_converter_uninit(static_cast<ma_data_converter *>(converter_), nullptr);
+			std::free(converter_);
+			converter_ = nullptr;
+		}
+		flush_for_new_format = false;
+		goto new_format;
 	}
 }
 
