@@ -267,6 +267,13 @@ void FfmpegDecoder::close() {
 bool FfmpegDecoder::read(AudioChunk &out, size_t max_frames) {
 	if(!codec_ctx_ || max_frames == 0) return false;
 
+	AVStream *stream = format_ctx_->streams[stream_index_];
+	props_.format.sample_rate = codec_ctx_->sample_rate;
+	props_.format.channels = codec_ctx_->ch_layout.nb_channels > 0
+	    ? codec_ctx_->ch_layout.nb_channels
+	    : stream->codecpar->ch_layout.nb_channels;
+	if(!props_.format.channels) return false;
+
 	const size_t channels = props_.format.channels;
 	std::vector<float> samples;
 	samples.reserve(max_frames * channels);
@@ -274,6 +281,15 @@ bool FfmpegDecoder::read(AudioChunk &out, size_t max_frames) {
 	bool timestamp_set = false;
 
 	while(samples.size() / channels < max_frames) {
+		uint32_t new_sample_rate = codec_ctx_->sample_rate;
+		uint32_t new_channels = codec_ctx_->ch_layout.nb_channels > 0
+	        ? codec_ctx_->ch_layout.nb_channels
+	        : stream->codecpar->ch_layout.nb_channels;
+
+		if(new_sample_rate != props_.format.sample_rate ||
+		   new_channels != props_.format.channels)
+			break;
+
 		if(pending_offset_ < pending_samples_.size()) {
 			if(!timestamp_set) {
 				timestamp = pending_timestamp_;
