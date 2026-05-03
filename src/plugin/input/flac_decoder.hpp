@@ -1,11 +1,13 @@
 // FLAC decoder, ported from Cog's Plugins/Flac/FlacDecoder.m.
 // Scope: raw FLAC streams, any bit depth (8/16/24/32), stereo/multichannel,
 // float32 interleaved output, Vorbis-comment + embedded PICTURE metadata.
-// OggFLAC, embedded cuesheets, HDCD detection, and live metadata
+// OggFLAC, HDCD detection, and live metadata
 // (willChangeValueForKey style KVO for ICY streams) are deferred.
 #pragma once
 
 #include "plugin/decoder.hpp"
+
+#include <FLAC/format.h>
 
 #include <cstdint>
 #include <string>
@@ -55,6 +57,7 @@ public:
 
 	// An embedded PICTURE block. `data` is the raw image bytes.
 	void accept_picture(const char *mime, const uint8_t *data, size_t length);
+	void accept_cuesheet(const FLAC__StreamMetadata_CueSheet &cue_sheet);
 
 	// Metadata updated on interval, fire callback if registered
 	void new_metadata(void);
@@ -87,6 +90,7 @@ private:
 	// Embedded album art, if any. Base64-encoded lazily in metadata().
 	std::string picture_mime_;
 	std::vector<uint8_t> picture_bytes_;
+	std::string cuesheet_text_;
 
 	// Interval metadata updated
 	MetadataChangedCallback metadata_changed_cb_;

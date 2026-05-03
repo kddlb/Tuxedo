@@ -1,10 +1,12 @@
 #include "plugin/registry.hpp"
 
+#include "plugin/input/cue_decoder.hpp"
 #include "plugin/input/file_source.hpp"
 #include "plugin/input/ffmpeg_decoder.hpp"
 #include "plugin/input/flac_decoder.hpp"
 #include "plugin/input/http_source.hpp"
 #include "plugin/input/miniaudio_decoder.hpp"
+#include "plugin/input/musepack_decoder.hpp"
 #include "plugin/input/mp3_decoder.hpp"
 #include "plugin/input/opus_decoder.hpp"
 #include "plugin/input/vorbis_decoder.hpp"
@@ -115,6 +117,10 @@ void register_builtin_plugins() {
 	r.register_source("http", [] { return SourcePtr(new HttpSource()); });
 	r.register_source("https", [] { return SourcePtr(new HttpSource()); });
 
+	auto cue_factory = [] { return DecoderPtr(new CueDecoder()); };
+	r.register_decoder("cue", cue_factory);
+	r.register_decoder_mime("application/x-cue", cue_factory);
+
 	// miniaudio handles the WAV fallback. WAV has no standardised
 	// tag container worth reading, so an empty metadata() is fine there.
 	auto ma_factory = [] { return DecoderPtr(new MiniaudioDecoder()); };
@@ -151,6 +157,14 @@ void register_builtin_plugins() {
 	r.register_decoder("mp3", mp3_factory);
 	for(const char *mime : {"audio/mpeg", "audio/mp3"}) {
 		r.register_decoder_mime(mime, mp3_factory);
+	}
+
+	// libmpcdec handles Musepack streams natively, matching Cog's
+	// reader/demux path instead of routing .mpc through FFmpeg fallback.
+	auto musepack_factory = [] { return DecoderPtr(new MusepackDecoder()); };
+	r.register_decoder("mpc", musepack_factory);
+	for(const char *mime : {"audio/x-musepack", "audio/musepack", "audio/x-mpc"}) {
+		r.register_decoder_mime(mime, musepack_factory);
 	}
 
 	// FFmpeg is the broad fallback path for streams, extensionless URLs,

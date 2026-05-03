@@ -5,8 +5,11 @@
 #include <FLAC/stream_decoder.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <cstdio>
 #include <cstring>
+#include <iomanip>
+#include <sstream>
 
 namespace tuxedo {
 
@@ -102,6 +105,10 @@ void metadata_cb(const FLAC__StreamDecoder *, const FLAC__StreamMetadata *meta,
 			                     meta->data.picture.data_length);
 			self->new_metadata();
 			break;
+		case FLAC__METADATA_TYPE_CUESHEET:
+			self->accept_cuesheet(meta->data.cue_sheet);
+			self->new_metadata();
+			break;
 		default:
 			break;
 	}
@@ -150,6 +157,7 @@ bool FlacDecoder::open(Source *source) {
 	FLAC__stream_decoder_set_metadata_respond(d, FLAC__METADATA_TYPE_STREAMINFO);
 	FLAC__stream_decoder_set_metadata_respond(d, FLAC__METADATA_TYPE_VORBIS_COMMENT);
 	FLAC__stream_decoder_set_metadata_respond(d, FLAC__METADATA_TYPE_PICTURE);
+	FLAC__stream_decoder_set_metadata_respond(d, FLAC__METADATA_TYPE_CUESHEET);
 
 	FLAC__StreamDecoderInitStatus init;
 
@@ -201,6 +209,7 @@ void FlacDecoder::close() {
 	vorbis_tags_ = nlohmann::json::object();
 	picture_mime_.clear();
 	picture_bytes_.clear();
+	cuesheet_text_.clear();
 }
 
 void FlacDecoder::accept_streaminfo(uint32_t channels, uint32_t sample_rate,
@@ -296,9 +305,48 @@ void FlacDecoder::accept_picture(const char *mime, const uint8_t *data, size_t l
 	picture_bytes_.assign(data, data + length);
 }
 
+void FlacDecoder::accept_cuesheet(const FLAC__StreamMetadata_CueSheet &cue_sheet) {
+	std::string source_name = source_ ? source_->url() : std::string{"stream.flac"};
+	static const std::string file_prefix = "file://";
+	if(source_name.compare(0, file_prefix.size(), file_prefix) == 0) {
+		source_name.erase(0, file_prefix.size());
+	}
+	source_name = std::filesystem::path(source_name).filename().string();
+
+	std::ostringstream out;
+	bool wrote_track = false;
+	for(uint32_t i = 0; i < cue_sheet.num_tracks; ++i) {
+		const auto &track = cue_sheet.tracks[i];
+		if(track.type != 0 || track.number == 170 || track.number == 0) continue;
+
+		uint64_t start = track.offset;
+		for(uint32_t j = 0; j < track.num_indices; ++j) {
+			if(track.indices[j].number == 1) {
+				start = track.offset + track.indices[j].offset;
+				break;
+			}
+		}
+
+		if(!wrote_track) {
+			out << "FILE \"" << source_name << "\" WAVE\n";
+			wrote_track = true;
+		}
+
+		out << "  TRACK " << std::setw(2) << std::setfill('0') << static_cast<int>(track.number)
+		    << " AUDIO\n";
+		if(track.isrc[0] != '\0') out << "    ISRC " << track.isrc << "\n";
+		out << "    INDEX 01 " << start << "\n";
+	}
+
+	cuesheet_text_ = wrote_track ? out.str() : std::string{};
+}
+
 nlohmann::json FlacDecoder::metadata() const {
 	nlohmann::json out = vorbis_tags_; // copy
 	out["codec"] = "FLAC";
+	if(!cuesheet_text_.empty() && !out.contains("cuesheet")) {
+		out["cuesheet"] = nlohmann::json::array({cuesheet_text_});
+	}
 	if(!picture_bytes_.empty()) {
 		out["album_art"] = {
 		    {"mime", picture_mime_},

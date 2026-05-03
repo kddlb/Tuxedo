@@ -53,6 +53,8 @@ bool HttpServer::start() {
 		json req{{"op", "metadata"}};
 		reply(res, ctl_.dispatch(req));
 	});
+	srv_->Post("/metadata_for_url", wrap_op("metadata_for_url"));
+	srv_->Post("/properties_for_url", wrap_op("properties_for_url"));
 	srv_->Get("/replaygain", [this](const httplib::Request &, httplib::Response &res) {
 		json req{{"op", "replaygain"}};
 		reply(res, ctl_.dispatch(req));

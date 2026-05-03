@@ -1,5 +1,6 @@
 #include "ipc/controller.hpp"
 
+#include "core/metadata_query.hpp"
 #include "core/playlist_parser.hpp"
 
 namespace tuxedo {
@@ -111,6 +112,28 @@ json Controller::dispatch(const json &req) {
 	if(op == "metadata") {
 		json out = make_ok(req);
 		out["metadata"] = player_.current_metadata();
+		return out;
+	}
+	if(op == "metadata_for_url") {
+		if(!req.contains("url") || !req["url"].is_string())
+			return make_err(req, "metadata_for_url requires string `url`");
+		json metadata;
+		if(!read_metadata_for_url(req["url"].get<std::string>(), metadata))
+			return make_err(req, "metadata query failed");
+		json out = make_ok(req);
+		out["url"] = req["url"];
+		out["metadata"] = std::move(metadata);
+		return out;
+	}
+	if(op == "properties_for_url") {
+		if(!req.contains("url") || !req["url"].is_string())
+			return make_err(req, "properties_for_url requires string `url`");
+		json properties;
+		if(!read_properties_for_url(req["url"].get<std::string>(), properties))
+			return make_err(req, "properties query failed");
+		json out = make_ok(req);
+		out["url"] = req["url"];
+		out["properties"] = std::move(properties);
 		return out;
 	}
 	if(op == "queue") {

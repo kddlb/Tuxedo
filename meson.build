@@ -86,12 +86,40 @@ if not id3tag_dep.found()
   endif
 endif
 
+# libmpcdec — Musepack decoder library.
+mpcdec_dep = dependency('libmpcdec', required: false)
+if not mpcdec_dep.found()
+  mpcdec_lib = cxx.find_library('mpcdec', required: false)
+  if mpcdec_lib.found()
+    mpcdec_dep = declare_dependency(
+      dependencies: [mpcdec_lib],
+    )
+  else
+    error('libmpcdec not found — install via your distro package manager or Homebrew')
+  endif
+endif
+
+# TagLib — offline metadata/properties reader for broad local-file coverage.
+taglib_dep = dependency('taglib', required: false)
+if not taglib_dep.found()
+  brew_taglib = '/opt/homebrew/opt/taglib'
+  taglib_lib = cxx.find_library('tag', dirs: [brew_taglib + '/lib'], required: false)
+  if taglib_lib.found()
+    taglib_dep = declare_dependency(
+      include_directories: include_directories(brew_taglib + '/include/taglib', is_system: true),
+      dependencies: [taglib_lib],
+    )
+  else
+    error('taglib not found — install via `brew install taglib` or your distro package manager')
+  endif
+endif
+
 # Single-header vendored libraries.
 miniaudio_inc = include_directories('vendor/miniaudio')
 json_inc = include_directories('vendor/json', is_system: true)
 httplib_inc = include_directories('vendor/httplib', is_system: true)
 
-deps = [thread_dep, flac_dep, opusfile_dep, vorbisfile_dep, id3tag_dep]
+deps = [thread_dep, flac_dep, opusfile_dep, vorbisfile_dep, id3tag_dep, mpcdec_dep, taglib_dep]
 curl_dep = dependency('libcurl')
 avformat_dep = dependency('libavformat')
 avcodec_dep = dependency('libavcodec')
@@ -123,6 +151,9 @@ core_inc = include_directories('src')
 
 core_sources = files(
   'src/core/audio_chunk.cpp',
+  'src/core/cue_sheet.cpp',
+  'src/core/media_probe.cpp',
+  'src/core/metadata_query.cpp',
   'src/core/playlist_parser.cpp',
   'src/core/player.cpp',
   'src/core/replaygain.cpp',
@@ -132,11 +163,13 @@ core_sources = files(
   'src/core/chain/converter_node.cpp',
   'src/core/chain/buffer_chain.cpp',
   'src/plugin/registry.cpp',
+  'src/plugin/input/cue_decoder.cpp',
   'src/plugin/input/ffmpeg_decoder.cpp',
   'src/plugin/input/file_source.cpp',
   'src/plugin/input/flac_decoder.cpp',
   'src/plugin/input/http_source.cpp',
   'src/plugin/input/miniaudio_decoder.cpp',
+  'src/plugin/input/musepack_decoder.cpp',
   'src/plugin/input/mp3_decoder.cpp',
   'src/plugin/input/opus_decoder.cpp',
   'src/plugin/input/vorbis_common.cpp',

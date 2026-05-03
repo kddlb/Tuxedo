@@ -1,3 +1,4 @@
+#include "core/cue_sheet.hpp"
 #include "core/playlist_parser.hpp"
 
 #include "plugin/registry.hpp"
@@ -145,8 +146,21 @@ PlaylistParseResult parse_pls(const std::string &url, const std::string &text) {
 
 PlaylistParseResult parse_playlist_url(const std::string &url) {
 	PlaylistParseResult result;
+	CueSheet cue_sheet;
+	if(cue_has_track_fragment(url) && load_cuesheet_for_url(url, cue_sheet)) {
+		result.recognized = true;
+		result.passthrough_original = true;
+		result.urls = {url};
+		return result;
+	}
+
 	std::string ext = lowercase(PluginRegistry::extension_of(url));
 	std::string scheme = lowercase(PluginRegistry::scheme_of(url));
+	if((ext == "cue" || ext == "flac") && load_cuesheet_for_url(url, cue_sheet)) {
+		result.recognized = true;
+		result.urls = cue_track_urls(cue_sheet, url);
+		return result;
+	}
 	if(ext == "m3u8" && (scheme == "http" || scheme == "https")) {
 		result.recognized = true;
 		result.passthrough_original = true;

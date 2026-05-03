@@ -9,8 +9,10 @@ namespace {
 // Strip "file://" (and a possible leading slash-triplet for file:///).
 std::string path_from_url(const std::string &url) {
 	const std::string pfx = "file://";
-	if(url.compare(0, pfx.size(), pfx) == 0) return url.substr(pfx.size());
-	return url;
+	std::string path = url.compare(0, pfx.size(), pfx) == 0 ? url.substr(pfx.size()) : url;
+	size_t suffix = path.find_first_of("?#");
+	if(suffix != std::string::npos) path.erase(suffix);
+	return path;
 }
 } // namespace
 

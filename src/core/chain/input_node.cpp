@@ -1,6 +1,6 @@
 #include "core/chain/input_node.hpp"
 
-#include "plugin/registry.hpp"
+#include "core/media_probe.hpp"
 
 namespace tuxedo {
 
@@ -14,52 +14,18 @@ InputNode::~InputNode() {
 
 bool InputNode::open_url(const std::string &url) {
 	close();
-
-	auto &reg = PluginRegistry::instance();
-	const std::string ext = PluginRegistry::extension_of(url);
-	std::vector<DecoderPtr> candidates;
-	auto source = reg.source_for_url(url);
-	if(!source || !source->open(url)) return false;
-
-	if(auto primary = reg.decoder_for_extension(ext)) {
-		candidates.push_back(std::move(primary));
-	} else if(auto primary = reg.decoder_for_mime(source->mime_type())) {
-		candidates.push_back(std::move(primary));
-	}
-	for(auto &fallback : reg.fallback_decoders()) {
-		candidates.push_back(std::move(fallback));
-	}
-
-	bool reuse_open_source = true;
-	for(auto &candidate : candidates) {
-		if(!reuse_open_source) {
-			source = reg.source_for_url(url);
-			if(!source || !source->open(url)) continue;
-		}
-		reuse_open_source = false;
-		if(!candidate || !candidate->open(source.get())) continue;
-
-		DecoderProperties props = candidate->properties();
-		if(!props.format.valid()) {
-			candidate->close();
-			source->close();
-			continue;
-		}
-
-		source_ = std::move(source);
-		decoder_ = std::move(candidate);
-		if(source_) source_->set_metadata_changed_callback([this] {
-			if(metadata_changed_cb_) metadata_changed_cb_();
-		});
-		if(decoder_) decoder_->set_metadata_changed_callback([this] {
-			if(metadata_changed_cb_) metadata_changed_cb_();
-		});
-		props_ = props;
-		return true;
-	}
-
-	if(source) source->close();
-	return false;
+	OpenedMedia opened;
+	if(!open_media_url(url, opened)) return false;
+	source_ = std::move(opened.source);
+	decoder_ = std::move(opened.decoder);
+	props_ = opened.properties;
+	if(source_) source_->set_metadata_changed_callback([this] {
+		if(metadata_changed_cb_) metadata_changed_cb_();
+	});
+	if(decoder_) decoder_->set_metadata_changed_callback([this] {
+		if(metadata_changed_cb_) metadata_changed_cb_();
+	});
+	return true;
 }
 
 void InputNode::close() {

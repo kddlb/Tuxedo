@@ -35,10 +35,10 @@ an explicit *don't-build-from-Claude* memory.)
 
 ## Build dependencies
 
-- macOS: `brew install meson ninja flac opusfile libvorbis libid3tag`.
+- macOS: `brew install meson ninja flac opusfile libvorbis libid3tag libmpcdec taglib`.
 - Linux (untested as of writing): `pkg-config`, `libflac-dev`,
-  `libopusfile-dev`, `libvorbis-dev`, `libid3tag-dev`, ALSA/Pulse dev
-  headers for miniaudio's backend.
+  `libopusfile-dev`, `libvorbis-dev`, `libid3tag-dev`, `libmpcdec-dev`,
+  `libtag1-dev`, ALSA/Pulse dev headers for miniaudio's backend.
 - Vendored, no action needed: miniaudio, nlohmann/json, cpp-httplib —
   all under `vendor/`.
 
@@ -68,6 +68,7 @@ src/
 │   │   ├── flac_decoder.{hpp,cpp}    libFLAC, STREAMINFO+VC+PICTURE
 │   │   ├── opus_decoder.{hpp,cpp}    libopusfile, VC+PICTURE+R128
 │   │   ├── vorbis_decoder.{hpp,cpp}  libvorbisfile, VC+METADATA_BLOCK_PICTURE
+│   │   ├── musepack_decoder.{hpp,cpp} libmpcdec, native Musepack demux/decode
 │   │   ├── mp3_decoder.{hpp,cpp}     ma_decoder + libid3tag (ID3v1/v2 + APIC + TXXX)
 │   │   └── miniaudio_decoder.{hpp,cpp}  WAV fallback (no tags)
 │   ├── output/                       OUTPUT BACKENDS go here
@@ -214,8 +215,9 @@ After non-trivial changes:
 
 tuxedo is an incremental port of Cog's architecture. **When the user
 asks for a next step** — "what's next?", "keep going", "continue the
-project", "anything else to port?" — **always run an Explore agent
-over `/Users/kevin/src/Cog` before recommending**. The "Port status"
+project", "anything else to port?" — **always inspect `../Cog` (the
+Cog repo in Tuxedo's parent directory) before recommending**. The
+"Port status"
 catalog below is a summary and may lag; `COG_PORT_TODO.md` is the
 living tracking file for ported and unported Cog features. Check
 `Cog/Plugins/`, `Cog/Audio/Chain/`, and `Cog/Audio/Output/` for new
@@ -236,8 +238,8 @@ Cog's GitHub org is **losnoco** (not "losno"). Upstream URL:
 - **Orchestrator**: `Player` ≈ Cog's `AudioPlayer` (queue, watchdog,
   event fan-out). Simpler — no playlist, no library catalog.
 - **Decoders**: FLAC (libFLAC), Opus (libopusfile), Ogg Vorbis
-  (libvorbisfile), MP3 (`ma_decoder` + libid3tag), WAV (miniaudio
-  fallback; no tags).
+  (libvorbisfile), Musepack (libmpcdec), MP3 (`ma_decoder` +
+  libid3tag), WAV (miniaudio fallback; no tags).
 - **Sources**: `FileSource` only.
 - **Output**: miniaudio cross-platform backend (Cog uses
   CoreAudio/AVFoundation on macOS).
@@ -261,7 +263,7 @@ Cog's GitHub org is **losnoco** (not "losno"). Upstream URL:
 
 ### Lossless / niche-format decoders
 
-- WavPack (libwavpack), Musepack (libmusepack), Shorten (libshorten).
+- WavPack (libwavpack), Shorten (libshorten).
 
 ### DSP / effects
 
@@ -283,10 +285,10 @@ Organya, APL, BASSMODS. All separate libraries.
 
 ### Metadata / library
 
-- `AudioMetadataReader` / `Writer` + TagLib integration — would
-  replace the per-decoder tag code with one backend that handles
-  every format at once, and unlock tag writing (prerequisite for a
-  ReplayGain scanner).
+- `AudioMetadataReader` / `AudioPropertiesReader`-style lookups are
+  now exposed in Tuxedo as offline URL queries over the existing
+  decoder stack plus a TagLib-backed fallback for local files; tag
+  writing is still unported.
 - Persistent track catalog (Core Data in Cog; out of scope for a
   headless daemon but worth flagging if the client-side story changes).
 
@@ -315,5 +317,6 @@ Organya, APL, BASSMODS. All separate libraries.
 
 ## Related local repos
 
-- `/Users/kevin/src/Cog` — upstream Cog. See "Continuing this project"
-  and "Port status" above for how to use it.
+- `../Cog` — local checkout of upstream Cog beside this repo. Use this
+  path first when porting or comparing behavior, then fall back to the
+  upstream URL if the local checkout is missing.

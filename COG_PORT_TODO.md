@@ -38,7 +38,7 @@ GUI-only Cog features are intentionally omitted. Items are grouped by subsystem 
 - [x] `HTTPSource` (`Cog/Plugins/HTTPSource/*` -> `src/plugin/input/http_source.*`)
 - [x] M3U / M3U8 playlist expansion (`Cog/Plugins/M3u/*` -> `src/core/playlist_parser.*`, `src/ipc/controller.cpp`)
 - [x] PLS playlist expansion (`Cog/Plugins/Pls/*` -> `src/core/playlist_parser.*`, `src/ipc/controller.cpp`)
-- [ ] Cue sheet virtual-track support (`Cog/Plugins/CueSheet/*`; no Tuxedo equivalent)
+- [x] Cue sheet virtual-track support (`Cog/Plugins/CueSheet/*` -> `src/core/cue_sheet.*`, `src/plugin/input/cue_decoder.*`, `src/core/playlist_parser.*`, `src/core/media_probe.*`)
 - [ ] Archive-backed sources (`Cog/Plugins/ArchiveSource/*`; no Tuxedo equivalent)
 - [ ] `SilenceDecoder` (`Cog/Plugins/SilenceDecoder/*`; no Tuxedo equivalent)
 - [ ] Playlist/model layer beyond the daemon queue (`Cog/Playlist/PlaylistController.*`, `PlaylistLoader.*`, `XmlContainer.*`; no Tuxedo equivalent)
@@ -53,7 +53,7 @@ GUI-only Cog features are intentionally omitted. Items are grouped by subsystem 
 - [x] FFmpeg fallback decode/container support (`Cog/Plugins/FFMPEG/*` -> `src/plugin/input/ffmpeg_decoder.*`)
 - [ ] `CoreAudioDecoder` (`Cog/Plugins/CoreAudio/*`; Tuxedo currently relies on FFmpeg fallback instead of a dedicated CoreAudio decoder)
 - [ ] `QuicktimeDecoder` (`Cog/Plugins/Quicktime/*`; no Tuxedo equivalent)
-- [ ] `MusepackDecoder` (`Cog/Plugins/Musepack/*`; no Tuxedo equivalent)
+- [x] `MusepackDecoder` (`Cog/Plugins/Musepack/*` -> `src/plugin/input/musepack_decoder.*`)
 - [ ] `WavPackDecoder` (`Cog/Plugins/WavPack/*`; no Tuxedo equivalent)
 - [ ] `ShortenDecoder` (`Cog/Plugins/Shorten/*`; no Tuxedo equivalent)
 - [ ] `Dumb` tracker decoder/container (`Cog/Plugins/Dumb/*`; no Tuxedo equivalent)
@@ -76,11 +76,11 @@ GUI-only Cog features are intentionally omitted. Items are grouped by subsystem 
 
 - [x] Decoder-owned metadata extraction (`Cog/Audio/AudioMetadataReader.*`, per-plugin readers -> per-decoder metadata in `src/plugin/input/*`)
 - [x] Canonicalized tag output with album art and ReplayGain fields (`Cog` tag readers -> `src/plugin/input/vorbis_common.*`, `src/plugin/input/mp3_decoder.*`, `src/plugin/input/ffmpeg_decoder.*`)
-- [ ] Generic `AudioMetadataReader` facade (`Cog/Audio/AudioMetadataReader.*`; no Tuxedo equivalent)
+- [x] Generic `AudioMetadataReader` facade (`Cog/Audio/AudioMetadataReader.*` -> `src/core/metadata_query.*`, `src/ipc/controller.cpp`)
 - [ ] Generic `AudioMetadataWriter` facade (`Cog/Audio/AudioMetadataWriter.*`; no Tuxedo equivalent)
-- [ ] Generic `AudioPropertiesReader` facade (`Cog/Audio/AudioPropertiesReader.*`; no Tuxedo equivalent)
-- [ ] TagLib-backed metadata reader/writer (`Cog/Plugins/TagLib/*`; no Tuxedo equivalent)
-- [ ] Cue sheet metadata reader (`Cog/Plugins/CueSheet/CueSheetMetadataReader.*`; no Tuxedo equivalent)
+- [x] Generic `AudioPropertiesReader` facade (`Cog/Audio/AudioPropertiesReader.*` -> `src/core/metadata_query.*`, `src/ipc/controller.cpp`)
+- [ ] TagLib-backed metadata reader/writer (`Cog/Plugins/TagLib/*`; metadata/properties reader path ported in `src/core/metadata_query.*`, writer still missing)
+- [x] Cue sheet metadata reader (`Cog/Plugins/CueSheet/CueSheetMetadataReader.*` -> cue-aware metadata/properties in `src/core/cue_sheet.*`, `src/plugin/input/cue_decoder.*`, `src/core/metadata_query.*`)
 - [ ] Persistent catalog / store layer (`Cog/Utils/SQLiteStore.*`, `RedundantPlaylistDataStore.*`; no Tuxedo equivalent)
 
 ## DSP and signal processing

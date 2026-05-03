@@ -44,6 +44,8 @@ Requests are JSON objects. `id` is optional and echoed on the response.
 {"op": "volume", "value": 0.5}
 {"op": "replaygain", "mode": "album_peak"}
 {"op": "status"}
+{"op": "metadata_for_url", "url": "/path/to/file.flac"}
+{"op": "properties_for_url", "url": "/path/to/file.flac"}
 ```
 
 Responses:
@@ -83,6 +85,8 @@ GET  /events        text/event-stream; `data: <json>\n\n` per event,
 POST /play          body: {"url": "..."}
 POST /queue         body: {"url": "..."}
 POST /load_playlist body: {"url": "...", "action": "queue|play"}
+POST /metadata_for_url body: {"url": "..."}
+POST /properties_for_url body: {"url": "..."}
 POST /queue_clear
 POST /queue_jump    body: {"index": N}
 POST /previous
