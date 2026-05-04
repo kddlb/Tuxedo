@@ -114,7 +114,19 @@ if not taglib_dep.found()
   endif
 endif
 
-libarchive_dep = dependency('libarchive')
+libarchive_dep = dependency('libarchive', required: false)
+if not libarchive_dep.found()
+  brew_libarchive = '/opt/homebrew/opt/libarchive'
+  archive_lib = cxx.find_library('archive', dirs: [brew_libarchive + '/lib'], required: false)
+  if archive_lib.found()
+    libarchive_dep = declare_dependency(
+      include_directories: include_directories(brew_libarchive + '/include', is_system: true),
+      dependencies: [archive_lib],
+    )
+  else
+    error('libarchive not found — install via `brew install libarchive` or your distro package manager')
+  endif
+endif
 
 # Single-header vendored libraries.
 miniaudio_inc = include_directories('vendor/miniaudio')
