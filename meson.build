@@ -188,6 +188,8 @@ core_sources = files(
   'src/plugin/input/musepack_decoder.cpp',
   'src/plugin/input/mp3_decoder.cpp',
   'src/plugin/input/opus_decoder.cpp',
+  'src/plugin/input/silence_decoder.cpp',
+  'src/plugin/input/silence_source.cpp',
   'src/plugin/input/vorbis_common.cpp',
   'src/plugin/input/vorbis_decoder.cpp',
   'src/plugin/output/miniaudio_backend.cpp',

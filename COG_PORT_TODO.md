@@ -40,7 +40,7 @@ GUI-only Cog features are intentionally omitted. Items are grouped by subsystem 
 - [x] PLS playlist expansion (`Cog/Plugins/Pls/*` -> `src/core/playlist_parser.*`, `src/ipc/controller.cpp`)
 - [x] Cue sheet virtual-track support (`Cog/Plugins/CueSheet/*` -> `src/core/cue_sheet.*`, `src/plugin/input/cue_decoder.*`, `src/core/playlist_parser.*`, `src/core/media_probe.*`)
 - [x] Archive-backed sources (`Cog/Plugins/ArchiveSource/*` -> `src/plugin/input/archive_source.*`, `src/core/archive_url.*`)
-- [ ] `SilenceDecoder` (`Cog/Plugins/SilenceDecoder/*`; no Tuxedo equivalent)
+- [x] `SilenceDecoder` (`Cog/Plugins/SilenceDecoder/*` -> `src/plugin/input/silence_source.*`, `src/plugin/input/silence_decoder.*`; playback open failures now fall back to `silence://10` in `src/core/chain/buffer_chain.cpp`)
 - [ ] Playlist/model layer beyond the daemon queue (`Cog/Playlist/PlaylistController.*`, `PlaylistLoader.*`, `XmlContainer.*`; no Tuxedo equivalent)
 
 ## Decoders and format support

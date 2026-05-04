@@ -11,6 +11,8 @@
 #include "plugin/input/musepack_decoder.hpp"
 #include "plugin/input/mp3_decoder.hpp"
 #include "plugin/input/opus_decoder.hpp"
+#include "plugin/input/silence_decoder.hpp"
+#include "plugin/input/silence_source.hpp"
 #include "plugin/input/vorbis_decoder.hpp"
 
 #include <algorithm>
@@ -122,11 +124,15 @@ void register_builtin_plugins() {
 	r.register_source("file", [] { return SourcePtr(new FileSource()); });
 	r.register_source("http", [] { return SourcePtr(new HttpSource()); });
 	r.register_source("https", [] { return SourcePtr(new HttpSource()); });
+	r.register_source("silence", [] { return SourcePtr(new SilenceSource()); });
 	r.register_source("unpack", [] { return SourcePtr(new ArchiveSource()); });
 
 	auto cue_factory = [] { return DecoderPtr(new CueDecoder()); };
 	r.register_decoder("cue", cue_factory);
 	r.register_decoder_mime("application/x-cue", cue_factory);
+
+	auto silence_factory = [] { return DecoderPtr(new SilenceDecoder()); };
+	r.register_decoder_mime("audio/x-silence", silence_factory);
 
 	// miniaudio handles the WAV fallback. WAV has no standardised
 	// tag container worth reading, so an empty metadata() is fine there.

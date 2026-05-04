@@ -2,6 +2,12 @@
 
 namespace tuxedo {
 
+namespace {
+
+constexpr const char *kSilenceFallbackUrl = "silence://10";
+
+}
+
 BufferChain::BufferChain() = default;
 
 BufferChain::~BufferChain() { close(); }
@@ -10,7 +16,7 @@ bool BufferChain::open(const std::string &url) {
 	close();
 	url_ = url;
 	input_ = std::make_unique<InputNode>();
-	if(!input_->open_url(url)) {
+	if(!input_->open_url(url) && !input_->open_url(kSilenceFallbackUrl)) {
 		input_.reset();
 		url_.clear();
 		return false;
