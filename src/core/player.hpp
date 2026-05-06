@@ -51,8 +51,14 @@ enum class RepeatMode {
 	All,
 };
 
+enum class DownmixMode {
+	Off = 0,
+	Stereo,
+};
+
 const char *shuffle_mode_name(ShuffleMode mode);
 const char *repeat_mode_name(RepeatMode mode);
+const char *downmix_mode_name(DownmixMode mode);
 std::optional<ShuffleMode> shuffle_mode_from_string(const std::string &mode);
 std::optional<RepeatMode> repeat_mode_from_string(const std::string &mode);
 
@@ -82,6 +88,8 @@ public:
 	ShuffleMode shuffle_mode() const;
 	void set_repeat_mode(RepeatMode mode);
 	RepeatMode repeat_mode() const;
+	void set_downmix_mode(DownmixMode mode);
+	DownmixMode downmix_mode() const;
 
 	PlaybackStatus status() const;
 	double position_seconds() const;
@@ -156,6 +164,7 @@ private:
 	ReplayGainMode replaygain_mode_ = ReplayGainMode::AlbumPeak;
 	ShuffleMode shuffle_mode_ = ShuffleMode::Off;
 	RepeatMode repeat_mode_ = RepeatMode::Off;
+	DownmixMode downmix_mode_ = DownmixMode::Stereo;
 	std::mt19937 rng_{std::random_device{}()};
 
 	// Watchdog thread + signalling.

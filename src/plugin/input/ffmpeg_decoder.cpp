@@ -189,6 +189,11 @@ bool FfmpegDecoder::open(Source *source) {
 	props_.format.channels = codec_ctx_->ch_layout.nb_channels > 0
 	    ? codec_ctx_->ch_layout.nb_channels
 	    : stream->codecpar->ch_layout.nb_channels;
+	props_.channel_layout = codec_ctx_->ch_layout.order == AV_CHANNEL_ORDER_NATIVE
+	    ? codec_ctx_->ch_layout.u.mask
+	    : stream->codecpar->ch_layout.order == AV_CHANNEL_ORDER_NATIVE
+	        ? stream->codecpar->ch_layout.u.mask
+	        : 0;
 	if(!props_.format.channels) return false;
 	props_.codec = codec_label(stream->codecpar);
 
@@ -272,6 +277,11 @@ bool FfmpegDecoder::read(AudioChunk &out, size_t max_frames) {
 	props_.format.channels = codec_ctx_->ch_layout.nb_channels > 0
 	    ? codec_ctx_->ch_layout.nb_channels
 	    : stream->codecpar->ch_layout.nb_channels;
+	props_.channel_layout = codec_ctx_->ch_layout.order == AV_CHANNEL_ORDER_NATIVE
+	    ? codec_ctx_->ch_layout.u.mask
+	    : stream->codecpar->ch_layout.order == AV_CHANNEL_ORDER_NATIVE
+	        ? stream->codecpar->ch_layout.u.mask
+	        : props_.channel_layout;
 	if(!props_.format.channels) return false;
 
 	const size_t channels = props_.format.channels;

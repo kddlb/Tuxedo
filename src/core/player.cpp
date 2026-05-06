@@ -59,6 +59,14 @@ const char *repeat_mode_name(RepeatMode mode) {
 	return "off";
 }
 
+const char *downmix_mode_name(DownmixMode mode) {
+	switch(mode) {
+		case DownmixMode::Off: return "off";
+		case DownmixMode::Stereo: return "stereo";
+	}
+	return "stereo";
+}
+
 std::optional<ShuffleMode> shuffle_mode_from_string(const std::string &mode) {
 	if(mode == "off") return ShuffleMode::Off;
 	if(mode == "all") return ShuffleMode::All;
@@ -452,9 +460,24 @@ void Player::set_repeat_mode(RepeatMode mode) {
 	repeat_mode_ = mode;
 }
 
+void Player::set_downmix_mode(DownmixMode mode) {
+	std::lock_guard<std::mutex> g(mtx_);
+	if(downmix_mode_ == mode) return;
+	downmix_mode_ = mode;
+	for(auto &queued : queue_) {
+		if(queued) queued->set_downmix_enabled(mode != DownmixMode::Off);
+	}
+	if(chain_) (void)restart_current_locked();
+}
+
 RepeatMode Player::repeat_mode() const {
 	std::lock_guard<std::mutex> g(mtx_);
 	return repeat_mode_;
+}
+
+DownmixMode Player::downmix_mode() const {
+	std::lock_guard<std::mutex> g(mtx_);
+	return downmix_mode_;
 }
 
 double Player::volume() const {
@@ -571,6 +594,7 @@ bool Player::start_chain_locked(std::unique_ptr<BufferChain> chain, size_t index
 		chain->close();
 		if(!chain->open(url)) return false;
 	}
+	chain->set_downmix_enabled(downmix_mode_ != DownmixMode::Off);
 
 	items_[index].format = chain->format();
 	items_[index].duration_seconds = duration_of_chain(chain.get());
@@ -630,6 +654,7 @@ std::unique_ptr<BufferChain> Player::open_chain_for_item_locked(size_t index) {
 	if(index >= items_.size()) return nullptr;
 	auto chain = std::make_unique<BufferChain>();
 	if(!chain->open(items_[index].url)) return nullptr;
+	chain->set_downmix_enabled(downmix_mode_ != DownmixMode::Off);
 	items_[index].format = chain->format();
 	items_[index].duration_seconds = duration_of_chain(chain.get());
 	items_[index].metadata = metadata_from_chain(chain.get());

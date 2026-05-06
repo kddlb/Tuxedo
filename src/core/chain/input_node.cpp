@@ -1,5 +1,6 @@
 #include "core/chain/input_node.hpp"
 
+#include "core/channel_layout.hpp"
 #include "core/media_probe.hpp"
 
 namespace tuxedo {
@@ -19,6 +20,9 @@ bool InputNode::open_url(const std::string &url) {
 	source_ = std::move(opened.source);
 	decoder_ = std::move(opened.decoder);
 	props_ = opened.properties;
+	if(props_.channel_layout == 0) {
+		props_.channel_layout = channel_layout::default_for_channels(props_.format.channels);
+	}
 	if(source_) source_->set_metadata_changed_callback([this] {
 		if(metadata_changed_cb_) metadata_changed_cb_();
 	});

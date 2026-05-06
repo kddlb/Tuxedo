@@ -87,7 +87,7 @@ GUI-only Cog features are intentionally omitted. Items are grouped by subsystem 
 
 - [x] `DSPFaderNode` and fade buffer helpers (`Cog/Audio/Chain/DSP/DSPFaderNode.*`, `FadedBuffer.*` -> `src/core/chain/dsp_fader_node.*`, `src/core/chain/faded_buffer.*`; fade state now lives in the DSP node and is applied on the final callback buffer to avoid buffered-ahead artifacts`)
 - [ ] `DSPEqualizerNode` (`Cog/Audio/Chain/DSP/DSPEqualizerNode.*`; no Tuxedo equivalent)
-- [ ] `DSPDownmixNode` + `Downmix` (`Cog/Audio/Chain/DSP/DSPDownmixNode.*`, `Downmix.*`; no Tuxedo equivalent)
+- [x] `DSPDownmixNode` + `Downmix` (`Cog/Audio/Chain/DSP/DSPDownmixNode.*`, `Downmix.*` -> `src/core/chain/dsp_downmix_node.*`, `src/core/chain/downmix.*`; multichannel playback now downmixes to stereo in the DSP chain, and future settings work can toggle it via the internal `DownmixMode` path in `src/core/player.*` / `src/core/chain/buffer_chain.*`)
 - [ ] `DSPFSurroundNode` + `FSurroundFilter` (`Cog/Audio/Chain/DSP/DSPFSurroundNode.*`, `FSurroundFilter.*`; no Tuxedo equivalent)
 - [ ] `DSPHRTFNode` + `HeadphoneFilter` (`Cog/Audio/Chain/DSP/DSPHRTFNode.*`, `HeadphoneFilter.*`; no Tuxedo equivalent)
 - [ ] `DSPRubberbandNode` (`Cog/Audio/Chain/DSP/DSPRubberbandNode.*`; no Tuxedo equivalent)

@@ -17,6 +17,7 @@ struct DecoderProperties {
 	StreamFormat format{};
 	int64_t total_frames = -1; // -1 = unknown / infinite
 	std::string codec;
+	uint64_t channel_layout = 0;
 };
 
 class Decoder {

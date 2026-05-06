@@ -166,6 +166,7 @@ core_inc = include_directories('src')
 core_sources = files(
   'src/core/archive_url.cpp',
   'src/core/audio_chunk.cpp',
+  'src/core/channel_layout.cpp',
   'src/core/cue_sheet.cpp',
   'src/core/media_probe.cpp',
   'src/core/metadata_query.cpp',
@@ -176,6 +177,8 @@ core_sources = files(
   'src/core/chain/input_node.cpp',
   'src/core/chain/output_node.cpp',
   'src/core/chain/dsp_node.cpp',
+  'src/core/chain/downmix.cpp',
+  'src/core/chain/dsp_downmix_node.cpp',
   'src/core/chain/dsp_fader_node.cpp',
   'src/core/chain/faded_buffer.cpp',
   'src/core/chain/converter_node.cpp',
