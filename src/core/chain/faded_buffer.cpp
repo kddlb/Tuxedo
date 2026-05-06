@@ -31,16 +31,18 @@ void FadedBuffer::reset(float fade_start, float fade_target, double duration_ms)
 bool FadedBuffer::apply(AudioChunk &chunk) {
 	if(chunk.empty()) return !active_;
 
-	const auto fmt = chunk.format();
-	if(!fmt.valid() || !fmt.channels) return !active_;
+	return apply(chunk.samples().data(), chunk.frame_count(), chunk.format());
+}
 
-	auto &samples = chunk.samples();
+bool FadedBuffer::apply(float *samples, size_t frames, StreamFormat fmt) {
+	if(!samples || !frames) return !active_;
+	if(!fmt.valid() || !fmt.channels) return !active_;
 	if(active_ && remaining_frames_ <= 0) {
 		remaining_frames_ = std::max<int64_t>(
 		    1, static_cast<int64_t>(std::llround(duration_ms_ * fmt.sample_rate / 1000.0)));
 	}
 
-	for(size_t frame = 0; frame < chunk.frame_count(); ++frame) {
+	for(size_t frame = 0; frame < frames; ++frame) {
 		for(uint32_t channel = 0; channel < fmt.channels; ++channel) {
 			samples[frame * fmt.channels + channel] *= fade_level_;
 		}

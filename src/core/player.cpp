@@ -370,6 +370,7 @@ void Player::stop() {
 void Player::pause() {
 	std::lock_guard<std::mutex> g(mtx_);
 	if(!output_ || !chain_ || status_ != PlaybackStatus::Playing) return;
+	if(chain_->fader()) chain_->fader()->pause_and_wait();
 	output_->pause();
 	status_ = PlaybackStatus::Paused;
 	if(cb_) {
@@ -384,6 +385,7 @@ void Player::pause() {
 void Player::resume() {
 	std::lock_guard<std::mutex> g(mtx_);
 	if(!output_ || !chain_ || status_ != PlaybackStatus::Paused) return;
+	if(chain_->fader()) chain_->fader()->resume_with_fade_in();
 	output_->resume();
 	status_ = PlaybackStatus::Playing;
 	if(cb_) {

@@ -12,6 +12,7 @@ public:
 	FadedBuffer(float fade_start, float fade_target, double duration_ms);
 
 	void reset(float fade_start, float fade_target, double duration_ms);
+	bool apply(float *samples, size_t frames, StreamFormat format);
 	bool apply(AudioChunk &chunk);
 
 	float current_level() const { return fade_level_; }

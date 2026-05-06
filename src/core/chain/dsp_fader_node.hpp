@@ -18,6 +18,7 @@ public:
 	void reset_buffer();
 	bool pause_and_wait();
 	void resume_with_fade_in();
+	void apply_output_fade(float *samples, size_t frames, StreamFormat format);
 
 	bool paused() const;
 	bool fading() const;
@@ -36,6 +37,7 @@ private:
 	double timestamp_ = 0.0;
 	bool paused_ = false;
 	bool pause_requested_ = false;
+	bool output_paused_ = false;
 };
 
 } // namespace tuxedo

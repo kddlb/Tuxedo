@@ -8,7 +8,6 @@
 #include "plugin/output_backend.hpp"
 
 #include <atomic>
-#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -68,10 +67,6 @@ public:
 	void render(float *dst, size_t frames);
 
 private:
-	static constexpr double kPauseFadeMs = 200.0;
-
-	void begin_fade_locked(float target_level, double duration_ms);
-
 	std::atomic<Node *> previous_{nullptr};
 	std::atomic<Node *> next_source_{nullptr};
 	StreamFormat format_{};
@@ -80,13 +75,6 @@ private:
 	std::atomic<bool> paused_{false};
 	std::atomic<double> volume_{1.0};
 	std::atomic<int64_t> frames_played_{0};
-
-	std::mutex fade_mtx_;
-	std::condition_variable fade_cv_;
-	float fade_level_ = 1.0f;
-	float fade_target_ = 1.0f;
-	int64_t fade_remaining_frames_ = 0;
-	bool pause_requested_ = false;
 
 	// Holds the tail of a chunk we couldn't fully push in the last render.
 	std::mutex leftover_mtx_;
