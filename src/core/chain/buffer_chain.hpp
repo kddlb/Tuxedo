@@ -6,6 +6,7 @@
 #pragma once
 
 #include "core/chain/converter_node.hpp"
+#include "core/chain/dsp_fader_node.hpp"
 #include "core/chain/input_node.hpp"
 
 #include <memory>
@@ -39,7 +40,9 @@ public:
 
 	InputNode *input() { return input_.get(); }
 	const InputNode *input() const { return input_.get(); }
-	Node *final_node() { return converter_.get(); }
+	DSPFaderNode *fader() { return fader_.get(); }
+	const DSPFaderNode *fader() const { return fader_.get(); }
+	Node *final_node() { return fader_ ? static_cast<Node *>(fader_.get()) : converter_.get(); }
 
 	StreamFormat format() const { return format_; }
 	const std::string &url() const { return url_; }
@@ -47,6 +50,7 @@ public:
 private:
 	std::unique_ptr<InputNode> input_;
 	std::unique_ptr<ConverterNode> converter_;
+	std::unique_ptr<DSPFaderNode> fader_;
 	StreamFormat format_{};
 	std::string url_;
 	bool launched_ = false;

@@ -25,10 +25,16 @@ bool BufferChain::open(const std::string &url) {
 
 	converter_ = std::make_unique<ConverterNode>();
 	converter_->set_previous(input_.get());
+	fader_ = std::make_unique<DSPFaderNode>(converter_.get());
 	return true;
 }
 
 void BufferChain::close() {
+	if(fader_) {
+		fader_->request_stop();
+		fader_->join();
+		fader_.reset();
+	}
 	if(converter_) {
 		converter_->request_stop();
 		converter_->join();
@@ -56,6 +62,7 @@ void BufferChain::seek(int64_t frame) {
 		converter_->request_flush();
 		converter_->flush_buffer();
 	}
+	if(fader_) fader_->reset_buffer();
 	input_->flush_buffer();
 }
 
@@ -67,10 +74,12 @@ void BufferChain::launch() {
 	if(launched_) return;
 	if(input_) input_->launch();
 	if(converter_) converter_->launch();
+	if(fader_) fader_->launch();
 	launched_ = true;
 }
 
 void BufferChain::request_stop() {
+	if(fader_) fader_->request_stop();
 	if(converter_) converter_->request_stop();
 	if(input_) input_->request_stop();
 }

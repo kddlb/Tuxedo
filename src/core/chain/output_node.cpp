@@ -3,6 +3,7 @@
 #include "plugin/output/miniaudio_backend.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace tuxedo {
@@ -32,6 +33,13 @@ void OutputNode::close() {
 	paused_.store(false);
 	previous_.store(nullptr);
 	next_source_.store(nullptr);
+	{
+		std::lock_guard<std::mutex> g(fade_mtx_);
+		fade_level_ = 1.0f;
+		fade_target_ = 1.0f;
+		fade_remaining_frames_ = 0;
+		pause_requested_ = false;
+	}
 	std::lock_guard<std::mutex> g(leftover_mtx_);
 	leftover_ = {};
 }
@@ -41,26 +49,25 @@ void OutputNode::start() {
 }
 
 void OutputNode::pause() {
-	paused_.store(true);
+	std::unique_lock<std::mutex> lk(fade_mtx_);
+	if(paused_.load()) return;
+	pause_requested_ = true;
+	begin_fade_locked(0.0f, kPauseFadeMs);
+	fade_cv_.wait(lk, [this] { return paused_.load(); });
 }
 
 void OutputNode::resume() {
+	std::lock_guard<std::mutex> g(fade_mtx_);
+	if(!paused_.load()) return;
 	paused_.store(false);
+	pause_requested_ = false;
+	fade_level_ = 0.0f;
+	begin_fade_locked(1.0f, kPauseFadeMs);
 }
 
 void OutputNode::flush_leftover() {
 	std::lock_guard<std::mutex> g(leftover_mtx_);
 	leftover_ = {};
-}
-
-void OutputNode::add_effect(std::shared_ptr<Effect> effect) {
-	std::lock_guard<std::mutex> g(effects_mtx_);
-	effects_.push_back(std::move(effect));
-}
-
-void OutputNode::remove_effect(const std::shared_ptr<Effect> &effect) {
-	std::lock_guard<std::mutex> g(effects_mtx_);
-	effects_.erase(std::remove(effects_.begin(), effects_.end(), effect), effects_.end());
 }
 
 void OutputNode::set_on_stream_consumed(std::function<void()> cb) {
@@ -79,10 +86,23 @@ double OutputNode::seconds_played() const {
 }
 
 namespace {
+constexpr float kFadeEpsilon = 1e-6f;
+
 void copy_scaled(float *dst, const float *src, size_t samples, float vol) {
 	for(size_t i = 0; i < samples; ++i) dst[i] = src[i] * vol;
 }
 } // namespace
+
+void OutputNode::begin_fade_locked(float target_level, double duration_ms) {
+	fade_target_ = target_level;
+	if(duration_ms <= 0.0 || !format_.valid()) {
+		fade_level_ = target_level;
+		fade_remaining_frames_ = 0;
+		return;
+	}
+	fade_remaining_frames_ = std::max<int64_t>(
+	    1, static_cast<int64_t>(std::llround(duration_ms * format_.sample_rate / 1000.0)));
+}
 
 void OutputNode::render(float *dst, size_t frames) {
 	const uint32_t ch = format_.channels;
@@ -145,15 +165,35 @@ void OutputNode::render(float *dst, size_t frames) {
 	if(filled < frames) {
 		std::memset(dst + filled * ch, 0, (frames - filled) * ch * sizeof(float));
 	}
-	frames_played_.fetch_add(static_cast<int64_t>(filled));
 
-	// Apply DSP effects in-place on the output buffer.
 	{
-		std::lock_guard<std::mutex> g(effects_mtx_);
-		for(auto &effect : effects_) {
-			effect->process(dst, frames, ch, format_.sample_rate);
+		std::lock_guard<std::mutex> g(fade_mtx_);
+		for(size_t frame = 0; frame < frames; ++frame) {
+			for(uint32_t channel = 0; channel < ch; ++channel) {
+				dst[frame * ch + channel] *= fade_level_;
+			}
+
+			if(fade_remaining_frames_ > 0) {
+				fade_level_ += (fade_target_ - fade_level_) / static_cast<float>(fade_remaining_frames_);
+				--fade_remaining_frames_;
+			} else {
+				fade_level_ = fade_target_;
+			}
+		}
+
+		if(fade_remaining_frames_ <= 0 || std::abs(fade_level_ - fade_target_) < kFadeEpsilon) {
+			fade_level_ = fade_target_;
+			fade_remaining_frames_ = 0;
+		}
+
+		if(pause_requested_ && fade_level_ <= kFadeEpsilon && fade_remaining_frames_ == 0) {
+			paused_.store(true);
+			pause_requested_ = false;
+			fade_cv_.notify_all();
 		}
 	}
+
+	frames_played_.fetch_add(static_cast<int64_t>(filled));
 
 	// Fire notifications *outside* the audio hot path loop, but still on
 	// the audio thread. Callbacks are expected to be non-blocking

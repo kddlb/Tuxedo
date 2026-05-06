@@ -48,6 +48,9 @@ public:
 	// Returns an empty chunk at end-of-stream.
 	AudioChunk read_chunk(size_t max_frames);
 
+	void wait_until_buffered_frames_at_most(size_t max_frames);
+	void wait_until_buffered_frames_at_least(size_t min_frames);
+
 	// Drops all buffered chunks. Intended for seek — unblocks any waiter
 	// in write_chunk so the producer can loop around and produce fresh,
 	// post-seek audio.
@@ -63,6 +66,9 @@ protected:
 	Node *previous_ = nullptr;
 	std::atomic<bool> should_continue_{true};
 	std::atomic<bool> end_of_stream_{false};
+
+	virtual size_t max_buffered_frames() const { return kMaxBufferedFrames; }
+	virtual double max_buffered_seconds() const { return kMaxBufferedSeconds; }
 
 private:
 	void thread_entry();

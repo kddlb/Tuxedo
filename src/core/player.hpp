@@ -7,7 +7,6 @@
 #include "core/chain/output_node.hpp"
 #include "core/replaygain.hpp"
 #include "core/status.hpp"
-#include "plugin/dsp/fader_effect.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -146,7 +145,6 @@ private:
 
 	std::unique_ptr<BufferChain> chain_;
 	std::unique_ptr<OutputNode> output_;
-	std::shared_ptr<FaderEffect> fader_;
 
 	std::deque<std::unique_ptr<BufferChain>> queue_;
 	std::deque<size_t> upcoming_indices_;

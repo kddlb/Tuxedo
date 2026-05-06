@@ -37,7 +37,7 @@ void Node::write_chunk(AudioChunk chunk) {
 
 	std::unique_lock<std::mutex> lk(mtx_);
 	not_full_.wait(lk, [this] {
-		return !should_continue_.load() || (buffered_frames_ < kMaxBufferedFrames && buffered_seconds_ < kMaxBufferedSeconds);
+		return !should_continue_.load() || (buffered_frames_ < max_buffered_frames() && buffered_seconds_ < max_buffered_seconds());
 	});
 	if(!should_continue_.load()) return;
 
@@ -66,6 +66,20 @@ AudioChunk Node::read_chunk(size_t max_frames) {
 	buffered_seconds_ -= out.duration();
 	not_full_.notify_one();
 	return out;
+}
+
+void Node::wait_until_buffered_frames_at_most(size_t max_frames) {
+	std::unique_lock<std::mutex> lk(mtx_);
+	not_full_.wait(lk, [this, max_frames] {
+		return !should_continue_.load() || buffered_frames_ <= max_frames;
+	});
+}
+
+void Node::wait_until_buffered_frames_at_least(size_t min_frames) {
+	std::unique_lock<std::mutex> lk(mtx_);
+	not_empty_.wait(lk, [this, min_frames] {
+		return !should_continue_.load() || buffered_frames_ >= min_frames || end_of_stream_.load();
+	});
 }
 
 void Node::flush_buffer() {

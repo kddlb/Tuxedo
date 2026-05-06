@@ -20,7 +20,7 @@ GUI-only Cog features are intentionally omitted. Items are grouped by subsystem 
 - [x] `AudioPlayer`-style orchestrator (`Cog/Audio/AudioPlayer.*` -> `src/core/player.*`)
 - [x] Queue/history controls such as previous, skip, queue jump, shuffle, and repeat (`Cog/Audio/AudioPlayer.*` -> `src/core/player.*`, `src/ipc/controller.cpp`)
 - [x] ReplayGain application in the playback path (Cog uses fader-node logic; Tuxedo applies gain in `src/core/replaygain.*` and `src/core/player.*`)
-- [ ] `DSPNode` base (`Cog/Audio/Chain/DSPNode.*`; no Tuxedo equivalent)
+- [x] `DSPNode` base (`Cog/Audio/Chain/DSPNode.*` -> `src/core/chain/dsp_node.*`)
 - [ ] `ChunkList` (`Cog/Audio/Chain/ChunkList.*`; no Tuxedo equivalent)
 - [ ] `VisualizationNode` (`Cog/Audio/Chain/VisualizationNode.*`; no Tuxedo equivalent)
 - [ ] HDCD processing support (`Cog/Audio/ThirdParty/hdcd/`; no Tuxedo equivalent found)
@@ -85,7 +85,7 @@ GUI-only Cog features are intentionally omitted. Items are grouped by subsystem 
 
 ## DSP and signal processing
 
-- [ ] `DSPFaderNode` and fade buffer helpers (`Cog/Audio/Chain/DSP/DSPFaderNode.*`, `FadedBuffer.*`; no Tuxedo equivalent)
+- [ ] `DSPFaderNode` and fade buffer helpers (`Cog/Audio/Chain/DSP/DSPFaderNode.*`, `FadedBuffer.*`; scaffolded in `src/core/chain/dsp_fader_node.*` and `src/core/chain/faded_buffer.*`, but audible pause/resume fades still complete in `src/core/chain/output_node.*` to avoid buffered-ahead artifacts`)
 - [ ] `DSPEqualizerNode` (`Cog/Audio/Chain/DSP/DSPEqualizerNode.*`; no Tuxedo equivalent)
 - [ ] `DSPDownmixNode` + `Downmix` (`Cog/Audio/Chain/DSP/DSPDownmixNode.*`, `Downmix.*`; no Tuxedo equivalent)
 - [ ] `DSPFSurroundNode` + `FSurroundFilter` (`Cog/Audio/Chain/DSP/DSPFSurroundNode.*`, `FSurroundFilter.*`; no Tuxedo equivalent)

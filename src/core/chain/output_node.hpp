@@ -5,14 +5,13 @@
 
 #include "core/audio_chunk.hpp"
 #include "core/chain/node.hpp"
-#include "plugin/dsp/effect.hpp"
 #include "plugin/output_backend.hpp"
 
 #include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <vector>
 
 namespace tuxedo {
 
@@ -65,14 +64,14 @@ public:
 	// alongside a seek so the next render() can only emit post-seek audio.
 	void flush_leftover();
 
-	// Global DSP effects applied in the audio thread.
-	void add_effect(std::shared_ptr<Effect> effect);
-	void remove_effect(const std::shared_ptr<Effect> &effect);
-
 	// Called by the backend on its audio thread.
 	void render(float *dst, size_t frames);
 
 private:
+	static constexpr double kPauseFadeMs = 200.0;
+
+	void begin_fade_locked(float target_level, double duration_ms);
+
 	std::atomic<Node *> previous_{nullptr};
 	std::atomic<Node *> next_source_{nullptr};
 	StreamFormat format_{};
@@ -82,6 +81,13 @@ private:
 	std::atomic<double> volume_{1.0};
 	std::atomic<int64_t> frames_played_{0};
 
+	std::mutex fade_mtx_;
+	std::condition_variable fade_cv_;
+	float fade_level_ = 1.0f;
+	float fade_target_ = 1.0f;
+	int64_t fade_remaining_frames_ = 0;
+	bool pause_requested_ = false;
+
 	// Holds the tail of a chunk we couldn't fully push in the last render.
 	std::mutex leftover_mtx_;
 	AudioChunk leftover_;
@@ -90,9 +96,6 @@ private:
 	std::mutex callbacks_mtx_;
 	std::function<void()> on_stream_consumed_;
 	std::function<void()> on_stream_advanced_;
-
-	std::mutex effects_mtx_;
-	std::vector<std::shared_ptr<Effect>> effects_;
 };
 
 } // namespace tuxedo

@@ -72,10 +72,7 @@ std::optional<RepeatMode> repeat_mode_from_string(const std::string &mode) {
 	return std::nullopt;
 }
 
-Player::Player() {
-	fader_ = std::make_shared<FaderEffect>();
-	watchdog_ = std::thread([this] { watchdog_loop(); });
-}
+Player::Player() { watchdog_ = std::thread([this] { watchdog_loop(); }); }
 
 Player::~Player() {
 	{
@@ -372,9 +369,7 @@ void Player::stop() {
 
 void Player::pause() {
 	std::lock_guard<std::mutex> g(mtx_);
-	if(!output_ || status_ != PlaybackStatus::Playing) return;
-	fader_->fade_to(0.0f, 100.0);
-	std::this_thread::sleep_for(std::chrono::milliseconds(110));
+	if(!output_ || !chain_ || status_ != PlaybackStatus::Playing) return;
 	output_->pause();
 	status_ = PlaybackStatus::Paused;
 	if(cb_) {
@@ -388,8 +383,7 @@ void Player::pause() {
 
 void Player::resume() {
 	std::lock_guard<std::mutex> g(mtx_);
-	if(!output_ || status_ != PlaybackStatus::Paused) return;
-	fader_->fade_to(1.0f, 100.0);
+	if(!output_ || !chain_ || status_ != PlaybackStatus::Paused) return;
 	output_->resume();
 	status_ = PlaybackStatus::Playing;
 	if(cb_) {
@@ -586,9 +580,6 @@ bool Player::start_chain_locked(std::unique_ptr<BufferChain> chain, size_t index
 
 	auto output = std::make_unique<OutputNode>();
 	if(!output->open(chain->format())) return false;
-
-	fader_->set_level(1.0f);
-	output->add_effect(fader_);
 
 	output->set_previous(chain->final_node());
 	output->set_volume(desired_volume_);
