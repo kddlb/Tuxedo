@@ -14,6 +14,8 @@ public:
 
 	void start() override;
 	void stop() override;
+	void pause() override;
+	void resume() override;
 
 	struct Impl;
 

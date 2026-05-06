@@ -40,13 +40,27 @@ void OutputNode::start() {
 	if(backend_) backend_->start();
 }
 
-void OutputNode::pause() { paused_.store(true); }
+void OutputNode::pause() {
+	paused_.store(true);
+}
 
-void OutputNode::resume() { paused_.store(false); }
+void OutputNode::resume() {
+	paused_.store(false);
+}
 
 void OutputNode::flush_leftover() {
 	std::lock_guard<std::mutex> g(leftover_mtx_);
 	leftover_ = {};
+}
+
+void OutputNode::add_effect(std::shared_ptr<Effect> effect) {
+	std::lock_guard<std::mutex> g(effects_mtx_);
+	effects_.push_back(std::move(effect));
+}
+
+void OutputNode::remove_effect(const std::shared_ptr<Effect> &effect) {
+	std::lock_guard<std::mutex> g(effects_mtx_);
+	effects_.erase(std::remove(effects_.begin(), effects_.end(), effect), effects_.end());
 }
 
 void OutputNode::set_on_stream_consumed(std::function<void()> cb) {
@@ -132,6 +146,14 @@ void OutputNode::render(float *dst, size_t frames) {
 		std::memset(dst + filled * ch, 0, (frames - filled) * ch * sizeof(float));
 	}
 	frames_played_.fetch_add(static_cast<int64_t>(filled));
+
+	// Apply DSP effects in-place on the output buffer.
+	{
+		std::lock_guard<std::mutex> g(effects_mtx_);
+		for(auto &effect : effects_) {
+			effect->process(dst, frames, ch, format_.sample_rate);
+		}
+	}
 
 	// Fire notifications *outside* the audio hot path loop, but still on
 	// the audio thread. Callbacks are expected to be non-blocking

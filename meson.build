@@ -192,6 +192,7 @@ core_sources = files(
   'src/plugin/input/silence_source.cpp',
   'src/plugin/input/vorbis_common.cpp',
   'src/plugin/input/vorbis_decoder.cpp',
+  'src/plugin/dsp/fader_effect.cpp',
   'src/plugin/output/miniaudio_backend.cpp',
   'src/ipc/controller.cpp',
   'src/ipc/http_server.cpp',

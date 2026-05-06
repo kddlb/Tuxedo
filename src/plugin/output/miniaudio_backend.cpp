@@ -72,4 +72,12 @@ void MiniaudioBackend::stop() {
 	}
 }
 
+void MiniaudioBackend::pause() {
+	stop();
+}
+
+void MiniaudioBackend::resume() {
+	start();
+}
+
 } // namespace tuxedo

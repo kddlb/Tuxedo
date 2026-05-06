@@ -5,12 +5,14 @@
 
 #include "core/audio_chunk.hpp"
 #include "core/chain/node.hpp"
+#include "plugin/dsp/effect.hpp"
 #include "plugin/output_backend.hpp"
 
 #include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 namespace tuxedo {
 
@@ -63,6 +65,10 @@ public:
 	// alongside a seek so the next render() can only emit post-seek audio.
 	void flush_leftover();
 
+	// Global DSP effects applied in the audio thread.
+	void add_effect(std::shared_ptr<Effect> effect);
+	void remove_effect(const std::shared_ptr<Effect> &effect);
+
 	// Called by the backend on its audio thread.
 	void render(float *dst, size_t frames);
 
@@ -84,6 +90,9 @@ private:
 	std::mutex callbacks_mtx_;
 	std::function<void()> on_stream_consumed_;
 	std::function<void()> on_stream_advanced_;
+
+	std::mutex effects_mtx_;
+	std::vector<std::shared_ptr<Effect>> effects_;
 };
 
 } // namespace tuxedo
