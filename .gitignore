@@ -8,3 +8,4 @@ compile_commands.json
 *.a
 *.dylib
 *.so
+sample/
