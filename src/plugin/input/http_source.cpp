@@ -313,6 +313,7 @@ size_t HttpSource::on_write(const uint8_t *data, size_t len) {
 	while(consumed < len) {
 		size_t chunk = len - consumed;
 
+		std::string icy_block_to_parse;
 		{
 			std::unique_lock<std::mutex> lk(mtx_);
 			if(stop_requested_) return 0;
@@ -324,7 +325,14 @@ size_t HttpSource::on_write(const uint8_t *data, size_t len) {
 				icy_block_.append(reinterpret_cast<const char *>(data + consumed), take);
 				icy_block_remaining_ -= take;
 				consumed += take;
-				if(icy_block_remaining_ == 0) parse_icy_metadata(icy_block_);
+				if(icy_block_remaining_ == 0) {
+					icy_block_to_parse = std::move(icy_block_);
+					icy_block_.clear();
+				}
+				lk.unlock();
+				// parse_icy_metadata → handle_stream_title acquires mtx_
+				// itself, so we drop the lock first to avoid a self-deadlock.
+				if(!icy_block_to_parse.empty()) parse_icy_metadata(icy_block_to_parse);
 				continue;
 			}
 
