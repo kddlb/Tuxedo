@@ -474,6 +474,10 @@ void FfmpegDecoder::rebuild_metadata() {
 		AVDictionaryEntry *tag = nullptr;
 		while((tag = av_dict_get(dict, "", tag, AV_DICT_IGNORE_SUFFIX)) != nullptr) {
 			std::string key = canonical_tag_name(tag->key ? tag->key : "");
+			// HLS streams emit a PRIV frame on every segment that
+			// updates this transport-stream-timestamp tag — letting it
+			// through would fire metadata_changed on every segment.
+			if(key == "id3v2_priv.com.apple.streaming.transportstreamtimestamp") continue;
 			std::string value = tag->value ? tag->value : "";
 			push_tag(base_metadata_, key, value);
 		}

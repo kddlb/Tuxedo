@@ -6,6 +6,7 @@
 #include "plugin/input/file_source.hpp"
 #include "plugin/input/ffmpeg_decoder.hpp"
 #include "plugin/input/flac_decoder.hpp"
+#include "plugin/input/hls_decoder.hpp"
 #include "plugin/input/http_source.hpp"
 #include "plugin/input/miniaudio_decoder.hpp"
 #include "plugin/input/musepack_decoder.hpp"
@@ -180,12 +181,20 @@ void register_builtin_plugins() {
 		r.register_decoder_mime(mime, musepack_factory);
 	}
 
+	// HLS owns .m3u8 and the HLS MIME types — the playlist-aware
+	// decoder fetches segments in the background and feeds an internal
+	// FFmpeg decoder via an in-memory source.
+	auto hls_factory = [] { return DecoderPtr(new HlsDecoder()); };
+	r.register_decoder("m3u8", hls_factory);
+	for(const char *mime : {"application/vnd.apple.mpegurl", "application/x-mpegurl",
+	                        "audio/mpegurl", "audio/x-mpegurl"}) {
+		r.register_decoder_mime(mime, hls_factory);
+	}
+
 	// FFmpeg is the broad fallback path for streams, extensionless URLs,
 	// and formats without a dedicated native decoder.
 	auto ffmpeg_factory = [] { return DecoderPtr(new FfmpegDecoder()); };
-	for(const char *mime : {"application/ogg", "audio/ogg",
-	                        "application/vnd.apple.mpegurl", "application/x-mpegurl",
-	                        "audio/mpegurl", "audio/x-mpegurl"}) {
+	for(const char *mime : {"application/ogg", "audio/ogg"}) {
 		r.register_decoder_mime(mime, ffmpeg_factory);
 	}
 	r.register_fallback_decoder(ffmpeg_factory);

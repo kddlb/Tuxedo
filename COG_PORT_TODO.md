@@ -38,6 +38,7 @@ GUI-only Cog features are intentionally omitted. Items are grouped by subsystem 
 - [x] `HTTPSource` (`Cog/Plugins/HTTPSource/*` -> `src/plugin/input/http_source.*`)
 - [x] M3U / M3U8 playlist expansion (`Cog/Plugins/M3u/*` -> `src/core/playlist_parser.*`, `src/ipc/controller.cpp`)
 - [x] PLS playlist expansion (`Cog/Plugins/Pls/*` -> `src/core/playlist_parser.*`, `src/ipc/controller.cpp`)
+- [ ] HLS (HTTP Live Streaming) decoder (`Cog/Plugins/HLS/*`; routes `.m3u8` + HLS MIME types to a playlist-aware decoder that fetches segments in the background and feeds them to FFmpeg via an in-memory source — uses `src/plugin/input/http_source.*` for fetching and `src/plugin/input/ffmpeg_decoder.*` for the underlying audio decode)
 - [x] Cue sheet virtual-track support (`Cog/Plugins/CueSheet/*` -> `src/core/cue_sheet.*`, `src/plugin/input/cue_decoder.*`, `src/core/playlist_parser.*`, `src/core/media_probe.*`)
 - [x] Archive-backed sources (`Cog/Plugins/ArchiveSource/*` -> `src/plugin/input/archive_source.*`, `src/core/archive_url.*`)
 - [x] `SilenceDecoder` (`Cog/Plugins/SilenceDecoder/*` -> `src/plugin/input/silence_source.*`, `src/plugin/input/silence_decoder.*`; playback open failures now fall back to `silence://10` in `src/core/chain/buffer_chain.cpp`)
