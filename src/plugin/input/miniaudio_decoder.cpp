@@ -1,5 +1,8 @@
 #include "plugin/input/miniaudio_decoder.hpp"
 
+// Keep MA_NO_MP3 in sync with the implementation TU
+// (plugin/output/miniaudio_backend.cpp); MP3 is handled by Mp3Decoder.
+#define MA_NO_MP3
 #include "miniaudio.h"
 
 #include <cstring>

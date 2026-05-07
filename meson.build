@@ -130,6 +130,7 @@ endif
 
 # Single-header vendored libraries.
 miniaudio_inc = include_directories('vendor/miniaudio')
+minimp3_inc = include_directories('vendor/minimp3', is_system: true)
 json_inc = include_directories('vendor/json', is_system: true)
 httplib_inc = include_directories('vendor/httplib', is_system: true)
 
@@ -197,6 +198,7 @@ core_sources = files(
   'src/plugin/input/miniaudio_decoder.cpp',
   'src/plugin/input/musepack_decoder.cpp',
   'src/plugin/input/mp3_decoder.cpp',
+  'vendor/minimp3/minimp3_impl.c',
   'src/plugin/input/opus_decoder.cpp',
   'src/plugin/input/silence_decoder.cpp',
   'src/plugin/input/silence_source.cpp',
@@ -212,7 +214,7 @@ core_sources = files(
 tuxedod = executable(
   'tuxedod',
   core_sources + files('src/daemon/main.cpp'),
-  include_directories: [core_inc, miniaudio_inc, json_inc, httplib_inc],
+  include_directories: [core_inc, miniaudio_inc, minimp3_inc, json_inc, httplib_inc],
   dependencies: deps,
   install: true,
 )
