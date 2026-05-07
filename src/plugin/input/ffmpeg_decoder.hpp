@@ -23,6 +23,7 @@ public:
 	bool read(AudioChunk &out, size_t max_frames) override;
 	int64_t seek(int64_t frame) override;
 	nlohmann::json metadata() const override;
+	void set_metadata_changed_callback(MetadataChangedCallback cb) override;
 
 private:
 	bool decode_more();
@@ -53,6 +54,11 @@ private:
 	nlohmann::json base_metadata_ = nlohmann::json::object();
 	std::string picture_mime_;
 	std::vector<uint8_t> picture_bytes_;
+
+	// Interval metadata updated
+	MetadataChangedCallback metadata_changed_cb_;
+	int64_t metadata_update_interval_ = 0;
+	int64_t metadata_update_count_ = 0;
 };
 
 } // namespace tuxedo

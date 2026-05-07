@@ -224,6 +224,9 @@ bool FfmpegDecoder::open(Source *source) {
 		}
 	}
 
+	metadata_update_interval_ = props_.format.sample_rate;
+	metadata_update_count_ = 0;
+
 	rebuild_metadata();
 	return props_.format.valid();
 }
@@ -324,6 +327,13 @@ bool FfmpegDecoder::read(AudioChunk &out, size_t max_frames) {
 	}
 
 	if(samples.empty()) return false;
+
+	metadata_update_count_ += samples.size() / channels;
+	if(metadata_update_count_ >= metadata_update_interval_) {
+		metadata_update_count_ -= metadata_update_interval_;
+		rebuild_metadata();
+	}
+
 	out = AudioChunk(props_.format, std::move(samples), timestamp);
 	return true;
 }
@@ -467,6 +477,7 @@ bool FfmpegDecoder::drain_resampler() {
 }
 
 void FfmpegDecoder::rebuild_metadata() {
+	nlohmann::json orig_metadata = base_metadata_;
 	base_metadata_ = nlohmann::json::object();
 	if(!format_ctx_) return;
 
@@ -485,6 +496,14 @@ void FfmpegDecoder::rebuild_metadata() {
 
 	accept_dict(format_ctx_->metadata);
 	if(stream_index_ >= 0) accept_dict(format_ctx_->streams[stream_index_]->metadata);
+
+	if(orig_metadata != base_metadata_ && metadata_changed_cb_) {
+		metadata_changed_cb_();
+	}
+}
+
+void FfmpegDecoder::set_metadata_changed_callback(MetadataChangedCallback cb) {
+	metadata_changed_cb_ = std::move(cb);
 }
 
 } // namespace tuxedo
