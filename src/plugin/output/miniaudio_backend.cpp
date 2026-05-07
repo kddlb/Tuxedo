@@ -1,11 +1,13 @@
 // This TU is where miniaudio is instantiated.
 #define MINIAUDIO_IMPLEMENTATION
-// MP3 decoding now goes through the dedicated Mp3Decoder (vendored
-// minimp3); excluding it from miniaudio drops dr_mp3 from the build and
-// shrinks ma_decoder. Every TU that includes miniaudio.h must define
-// the same MA_NO_* set, otherwise struct layouts diverge across TUs and
+// MP3 decoding goes through Mp3Decoder (vendored minimp3) and FLAC
+// decoding through FlacDecoder (libFLAC); excluding both from
+// miniaudio drops dr_mp3 / dr_flac from the build and shrinks
+// ma_decoder. Every TU that includes miniaudio.h must define the same
+// MA_NO_* set, otherwise struct layouts diverge across TUs and
 // miniaudio's internal memsets walk past their owning struct.
 #define MA_NO_MP3
+#define MA_NO_FLAC
 #include "miniaudio.h"
 
 #include "plugin/output/miniaudio_backend.hpp"

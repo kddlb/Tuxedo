@@ -1,8 +1,10 @@
 #include "plugin/input/miniaudio_decoder.hpp"
 
-// Keep MA_NO_MP3 in sync with the implementation TU
-// (plugin/output/miniaudio_backend.cpp); MP3 is handled by Mp3Decoder.
+// Keep MA_NO_* in sync with the implementation TU
+// (plugin/output/miniaudio_backend.cpp); MP3 is handled by Mp3Decoder
+// (minimp3) and FLAC by FlacDecoder (libFLAC).
 #define MA_NO_MP3
+#define MA_NO_FLAC
 #include "miniaudio.h"
 
 #include <cstring>
