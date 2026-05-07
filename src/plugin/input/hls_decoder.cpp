@@ -162,6 +162,11 @@ bool HlsDecoder::open(Source *source) {
 		return false;
 	}
 
+	decoder_->set_metadata_changed_callback([this] {
+		if(metadata_changed_cb_)
+			metadata_changed_cb_();
+	});
+
 	if(!is_live_) {
 		total_duration_ = segment_manager_->total_duration();
 		uint32_t sr = decoder_->properties().format.sample_rate;
@@ -285,6 +290,10 @@ int64_t HlsDecoder::seek(int64_t frame) {
 nlohmann::json HlsDecoder::metadata() const {
 	if(decoder_) return decoder_->metadata();
 	return nlohmann::json::object();
+}
+
+void HlsDecoder::set_metadata_changed_callback(MetadataChangedCallback cb) {
+	metadata_changed_cb_ = std::move(cb);
 }
 
 } // namespace tuxedo

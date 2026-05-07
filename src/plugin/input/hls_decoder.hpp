@@ -28,6 +28,7 @@ public:
 	bool read(AudioChunk &out, size_t max_frames) override;
 	int64_t seek(int64_t frame) override;
 	nlohmann::json metadata() const override;
+	void set_metadata_changed_callback(MetadataChangedCallback cb) override;
 
 private:
 	std::unique_ptr<HlsMemorySource> memory_source_;
@@ -38,6 +39,8 @@ private:
 	double total_duration_ = 0.0;
 	int64_t total_frames_ = -1;
 	int64_t pending_skip_frames_ = 0;
+
+	MetadataChangedCallback metadata_changed_cb_;
 
 	std::string source_url_;
 
