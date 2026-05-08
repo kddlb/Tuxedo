@@ -55,8 +55,13 @@ src/
 │       ├── node.{hpp,cpp}            threaded producer base w/ ring buffer
 │       ├── input_node.{hpp,cpp}      drives a Decoder
 │       ├── converter_node.{hpp,cpp}  ma_data_converter; identity when input==target
+│       ├── dsp_node.{hpp,cpp}        threaded DSP base; common buffering + bypass
+│       ├── dsp_fader_node.{hpp,cpp}  audible pause/resume + stop fades
+│       ├── dsp_downmix_node.{hpp,cpp} multichannel → stereo (or target layout)
+│       ├── downmix.{hpp,cpp}         channel-layout-aware mix matrix
+│       ├── faded_buffer.{hpp,cpp}    rolling buffer with fade envelope helper
 │       ├── output_node.{hpp,cpp}    render callback; atomic next_source hot-swap
-│       └── buffer_chain.{hpp,cpp}    owns Input + Converter; retarget + seek
+│       └── buffer_chain.{hpp,cpp}    owns Input + Converter + DSPs; retarget + seek
 ├── plugin/                           plugin interfaces + implementations
 │   ├── source.hpp                    I/O interface (file/http/…)
 │   ├── decoder.hpp                   Decoder interface: open/read/seek/metadata
@@ -65,12 +70,15 @@ src/
 │   ├── input/                        SOURCES + DECODERS go here
 │   │   ├── file_source.{hpp,cpp}
 │   │   ├── http_source.{hpp,cpp}     libcurl, supports ICY interval metadata, both streamed and static files
+│   │   ├── archive_source.{hpp,cpp}  libarchive-backed `unpack://` source for entries inside ZIP/7Z/RAR/etc.
+│   │   ├── silence_source.{hpp,cpp}  `silence://` source (paired with silence_decoder)
 │   │   ├── vorbis_common.{hpp,cpp}   shared helpers for VC-tagged decoders
 │   │   ├── flac_decoder.{hpp,cpp}    libFLAC, STREAMINFO+VC+PICTURE
 │   │   ├── opus_decoder.{hpp,cpp}    libopusfile, VC+PICTURE+R128
 │   │   ├── vorbis_decoder.{hpp,cpp}  libvorbisfile, VC+METADATA_BLOCK_PICTURE
 │   │   ├── musepack_decoder.{hpp,cpp} libmpcdec, native Musepack demux/decode
 │   │   ├── mp3_decoder.{hpp,cpp}     minimp3 + libid3tag (ID3v1/v2 + APIC + TXXX)
+│   │   ├── ffmpeg_decoder.{hpp,cpp}  universal libav* fallback; AAC/M4A/ALAC/etc.; supports mid-stream format change
 │   │   ├── cue_decoder.{hpp,cpp}     CUE sheet virtual input
 │   │   ├── hls_memory_source.{hpp,cpp}  HLS stream backing source, memory buffer with sliding eviction of segments on read
 │   │   ├── hls_playlist.{hpp,cpp}    HLS playlist parsing code
@@ -80,7 +88,8 @@ src/
 │   │   └── silence_decoder.{hpp,cpp}  silence generator fallback, if all else fails
 │   ├── output/                       OUTPUT BACKENDS go here
 │   │   └── miniaudio_backend.{hpp,cpp}
-│   └── dsp/                          EFFECTS will go here (empty)
+│   └── dsp/                          plugin-level effects will go here (empty;
+│                                      core node-graph DSPs live in src/core/chain/)
 ├── ipc/                              transports — all route through Controller
 │   ├── controller.{hpp,cpp}          JSON dispatch + event fan-out
 │   ├── socket_server.{hpp,cpp}       unix socket, JSON-lines
@@ -94,18 +103,23 @@ src/
 **Plugin layout rule**: new plugin implementations go under
 `src/plugin/{input,output,dsp}/` by type. Plugin *interfaces* (the
 abstract classes) stay at `src/plugin/` top level — they aren't
-plugins themselves.
+plugins themselves. Note: built-in node-graph DSPs that the engine
+always wires (fader, downmix) live in `src/core/chain/`, not
+`src/plugin/dsp/`. Reserve `src/plugin/dsp/` for pluggable effects
+(EQ, HRTF, surround upmix, time-stretch, …) once those land.
 
 ## Architecture essentials
 
 1. **Player** owns a current `BufferChain` and a `std::deque` queue of
    pre-built, pre-decoding `BufferChain`s for gapless.
-2. **BufferChain** holds an `InputNode` (decoder thread) and a
+2. **BufferChain** holds an `InputNode` (decoder thread), a
    `ConverterNode` (sample-rate / channel adapter, identity when
-   input matches target), and remembers the URL it was opened with.
-   Chains launch lazily — only when promoted to current or armed as
-   next-source — so the converter always starts with the right target
-   format.
+   input matches target), a `DSPDownmixNode` (channel-layout aware,
+   identity for already-stereo content), and a `DSPFaderNode` (audible
+   pause/resume + stop fades; bypass when no fade is active). The
+   chain remembers the URL it was opened with. Chains launch lazily —
+   only when promoted to current or armed as next-source — so the
+   converter always starts with the right target format.
 3. **Node** base class: worker thread, ring buffer, `read_chunk` waits
    on a condvar until data or end-of-stream.
 4. **OutputNode** is NOT threaded. It's called from miniaudio's audio
@@ -127,6 +141,26 @@ plugins themselves.
 7. **Controller** is the single JSON-in/JSON-out dispatch. All three
    transports (socket, HTTP, stdin) go through it. Events fan out via
    `Controller::subscribe(cb)` → multiple subscribers (tokens).
+8. **Mid-stream format change**: decoders that can change rate /
+   channels mid-file (FFmpeg, FLAC chained streams) signal the new
+   format on the chunk; `BufferChain` forwards it through the
+   converter, which retargets without tearing down the device. The
+   chain peeks the head of its buffer for format before each pull so
+   late changes never get lost on a chunk boundary.
+9. **MIME-aware decoder routing**: the plugin registry dispatches by
+   the source's `mime_type()` first, then falls back to file extension
+   / scheme. HTTP and HLS sources rely on this — a `.m3u8` may serve
+   AAC, MP3, or FLAC segments and the right decoder is chosen per
+   segment. Decoders advertise the MIME types they accept at registration.
+10. **ReplayGain pipeline**: tags are read by every tag-capable decoder
+    and surfaced as `replaygain_*` fields. The `DSPFaderNode` applies
+    the active gain (selected via the `replaygain` op — `off`,
+    `track`, `track_peak`, `album`, `album_peak`, `soundcheck`) as a
+    pre-fade scalar. Default mode is `album_peak`.
+11. **Metadata-update callbacks**: long-running decoders (HTTP/ICY,
+    HLS, FFmpeg) push tag updates mid-stream via a callback on the
+    `InputNode`, which the Player turns into a `metadata_changed`
+    event. Don't recreate the chain to surface a tag change.
 
 ## Wire protocol
 
@@ -135,11 +169,15 @@ Response: `{"ok": true, "id": <echoed>}` or `{"ok": false, "error": "..."}`.
 Event (socket/stdin/SSE): `{"event": "stream_began", "state": "playing", ...}`.
 
 Ops: `play`, `pause`, `resume`, `stop`, `seek`, `volume`, `status`,
-`metadata`, `queue`, `queue_clear`, `queue_list`, `skip`.
+`metadata`, `queue`, `queue_clear`, `queue_list`, `queue_jump`,
+`skip`, `previous`, `load_playlist`, `shuffle`, `repeat`, `replaygain`,
+`metadata_for_url`, `properties_for_url`.
 
-HTTP routes: mirror the ops. `GET /status | /metadata | /queue |
-/events`, `POST /play | /pause | /resume | /stop | /seek | /volume |
-/queue | /queue_clear | /skip | /rpc`.
+HTTP routes mirror the ops. `GET /status | /metadata | /queue |
+/replaygain | /shuffle | /repeat | /events`, `POST /play | /queue |
+/load_playlist | /queue_clear | /queue_jump | /previous | /skip |
+/pause | /resume | /stop | /seek | /volume | /shuffle | /repeat |
+/replaygain | /metadata_for_url | /properties_for_url | /rpc`.
 
 SSE: `GET /events` → `text/event-stream`; each event `data: <json>\n\n`;
 `:\n\n` heartbeat every 15 s idle.
@@ -235,7 +273,7 @@ library dependency and API surface before scoping the work.
 Cog's GitHub org is **losnoco** (not "losno"). Upstream URL:
 `github.com/losnoco/Cog`.
 
-## Port status (as of 2026-04)
+## Port status (as of 2026-05)
 
 ### Ported
 
@@ -260,6 +298,14 @@ Cog's GitHub org is **losnoco** (not "losno"). Upstream URL:
 - **ArchiveSource** — read from inside ZIP/7Z/RAR. Cog:
   `Plugins/ArchiveSource/`. Uses libarchive, unlike Cog. See below
   as well.
+- **`DSPFaderNode`** — audible pause/resume + stop fades. Cog:
+  `Audio/Chain/DSP/DSPFaderNode.*`.
+- **`DSPDownmixNode`** + `Downmix` — channel-layout-aware multichannel
+  → stereo (or target layout) matrixing. Cog:
+  `Audio/Chain/DSP/DSPDownmixNode.*` and `Downmix.*`.
+- **ReplayGain application** — tags are surfaced by the tag-capable
+  decoders and applied by `DSPFaderNode` as a pre-fade scalar. Modes:
+  `off`, `track`, `track_peak`, `album`, `album_peak`, `soundcheck`.
 
 ### High-value ports still open
 
@@ -269,10 +315,6 @@ Cog's GitHub org is **losnoco** (not "losno"). Upstream URL:
   the future. Cog: `Plugins/HTTPSource/`.
 - **CoreAudio decoder** — AAC / M4A / ALAC. Dominates most macOS
   libraries. Cog: `Plugins/CoreAudio/`.
-- **ReplayGain application** — tags are already surfaced; needs a
-  DSP stage that applies them. Cog handles this in its fader node.
-- **`DSPFaderNode`** — fade-in/out, smooth stop. Cog:
-  `Audio/Chain/DSP/DSPFaderNode.*`.
 - **ArchiveSource** — The currently ported implementation only
   supports unpack:// URLs, but does not actually index raw archives
   passed for playback to look for all playable files inside.
@@ -284,8 +326,6 @@ Cog's GitHub org is **losnoco** (not "losno"). Upstream URL:
 ### DSP / effects
 
 - `DSPEqualizerNode` — multiband EQ.
-- `DSPDownmixNode` + `Downmix` — proper channel-layout-aware
-  surround-to-stereo matrixing.
 - `DSPHRTFNode` + `HeadphoneFilter` — HRTF crossfeed.
 - `DSPFSurroundNode` + `FSurroundFilter` — stereo → surround upmix.
 - `DSPRubberbandNode` — pitch/tempo shift (librubberband).

@@ -153,13 +153,14 @@ Default is `album_peak`.
 - `libmpcdec` (`brew install musepack`).
 - `libid3tag`.
 - `libcurl`.
+- `libarchive` (for `unpack://` archive entries).
 - FFmpeg libraries: `libavformat`, `libavcodec`, `libavutil`,
   `libswresample`.
 
 On Arch Linux:
 
 ```
-sudo pacman -S base-devel meson ninja pkgconf flac opusfile libvorbis libmpcdec libid3tag curl ffmpeg alsa-lib libpulse
+sudo pacman -S base-devel meson ninja pkgconf flac opusfile libvorbis libmpcdec libid3tag curl libarchive ffmpeg alsa-lib libpulse
 ```
 
 ## Status
