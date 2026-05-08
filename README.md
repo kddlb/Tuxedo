@@ -136,7 +136,7 @@ quit
 - Playlist containers: `.m3u`, `.m3u8`, `.pls` with relative-path
   resolution and HLS passthrough for streaming manifests.
 - Native decoders: FLAC via libFLAC, Opus via libopusfile, Ogg Vorbis
-  via libvorbisfile, MP3 and WAV via miniaudio/libid3tag.
+  via libvorbisfile, MP3 via minimp3/libid3tag, and WAV via miniaudio.
 - FFmpeg fallback: additional containers/codecs such as AAC / M4A and
   other formats without a dedicated native decoder.
 

@@ -35,12 +35,12 @@ an explicit *don't-build-from-Claude* memory.)
 
 ## Build dependencies
 
-- macOS: `brew install meson ninja flac opusfile libvorbis libid3tag libmpcdec taglib`.
-- Linux (untested as of writing): `pkg-config`, `libflac-dev`,
-  `libopusfile-dev`, `libvorbis-dev`, `libid3tag-dev`, `libmpcdec-dev`,
-  `libtag1-dev`, ALSA/Pulse dev headers for miniaudio's backend.
-- Vendored, no action needed: miniaudio, nlohmann/json, cpp-httplib —
-  all under `vendor/`.
+- macOS: `brew install meson ninja flac opusfile libvorbis libid3tag musepack taglib libarchive`.
+- Linux: `pkg-config`, `libflac-dev`, `libopusfile-dev`, `libvorbis-dev`,
+  `libid3tag-dev`, `libmpcdec-dev`, `libtag1-dev`, `libarchive-dev`,
+  ALSA/Pulse dev headers for miniaudio's backend.
+- Vendored, no action needed: miniaudio, minimp3, nlohmann/json,
+  cpp-httplib — all under `vendor/`.
 
 ## Source layout
 
@@ -64,13 +64,20 @@ src/
 │   ├── registry.{hpp,cpp}            static registration by scheme/extension
 │   ├── input/                        SOURCES + DECODERS go here
 │   │   ├── file_source.{hpp,cpp}
+│   │   ├── http_source.{hpp,cpp}     libcurl, supports ICY interval metadata, both streamed and static files
 │   │   ├── vorbis_common.{hpp,cpp}   shared helpers for VC-tagged decoders
 │   │   ├── flac_decoder.{hpp,cpp}    libFLAC, STREAMINFO+VC+PICTURE
 │   │   ├── opus_decoder.{hpp,cpp}    libopusfile, VC+PICTURE+R128
 │   │   ├── vorbis_decoder.{hpp,cpp}  libvorbisfile, VC+METADATA_BLOCK_PICTURE
 │   │   ├── musepack_decoder.{hpp,cpp} libmpcdec, native Musepack demux/decode
-│   │   ├── mp3_decoder.{hpp,cpp}     ma_decoder + libid3tag (ID3v1/v2 + APIC + TXXX)
-│   │   └── miniaudio_decoder.{hpp,cpp}  WAV fallback (no tags)
+│   │   ├── mp3_decoder.{hpp,cpp}     minimp3 + libid3tag (ID3v1/v2 + APIC + TXXX)
+│   │   ├── cue_decoder.{hpp,cpp}     CUE sheet virtual input
+│   │   ├── hls_memory_source.{hpp,cpp}  HLS stream backing source, memory buffer with sliding eviction of segments on read
+│   │   ├── hls_playlist.{hpp,cpp}    HLS playlist parsing code
+│   │   ├── hls_segment_manager.{hpp,cpp}  HLS segments reading, with threaded background reading
+│   │   ├── hls_decoder.{hpp,cpp}     HLS decoder, orchestrates the handling and decoding, uses ffmpeg_decoder.{hpp,cpp} for decoding, and uses http_source.{hpp,cpp} for playlist and segment retrieval
+│   │   ├── miniaudio_decoder.{hpp,cpp}  WAV fallback (no tags)
+│   │   └── silence_decoder.{hpp,cpp}  silence generator fallback, if all else fails
 │   ├── output/                       OUTPUT BACKENDS go here
 │   │   └── miniaudio_backend.{hpp,cpp}
 │   └── dsp/                          EFFECTS will go here (empty)
@@ -168,11 +175,12 @@ The MP3 decoder splits `TRCK` / `TPOS` "N/M" values into
   struct and **cannot be forward-declared** — we store it as `void *`
   and `static_cast` inside the .cpp. `libopusfile`'s `OggOpusFile` has
   the same constraint.
-- Homebrew's `flac` and `opusfile` formulas are keg-only; `meson.build`
-  has a manual `find_library` + hard-coded `/opt/homebrew/opt/...`
-  include path fallback because a bare `dependency('...')` won't find
-  them without `PKG_CONFIG_PATH`. If similar build deps land later,
-  follow the existing `flac_dep` / `opusfile_dep` pattern.
+- Homebrew's `flac`, `opusfile` and `libarchive` formulas are keg-only;
+  `meson.build` has a manual `find_library` + hard-coded
+  `/opt/homebrew/opt/...` include path fallback because a bare
+  `dependency('...')` won't find them without `PKG_CONFIG_PATH`. If
+  similar build deps land later, follow the existing `flac_dep` /
+  `opusfile_dep` pattern.
 - Stdin console is **not** JSON. It's the legacy line-based grammar
   (`play <path>`, `seek 30`, …). Socket and HTTP are the real IPC.
 - Volume is persisted in the Player across teardowns (a `volume` op
@@ -238,28 +246,36 @@ Cog's GitHub org is **losnoco** (not "losno"). Upstream URL:
 - **Orchestrator**: `Player` ≈ Cog's `AudioPlayer` (queue, watchdog,
   event fan-out). Simpler — no playlist, no library catalog.
 - **Decoders**: FLAC (libFLAC), Opus (libopusfile), Ogg Vorbis
-  (libvorbisfile), Musepack (libmpcdec), MP3 (`ma_decoder` +
+  (libvorbisfile), Musepack (libmpcdec), MP3 (minimp3 +
   libid3tag), WAV (miniaudio fallback; no tags).
-- **Sources**: `FileSource` only.
+- **Sources**: `FileSource` ported already, as is `HTTPSource`,
+  but a further note is added below.
 - **Output**: miniaudio cross-platform backend (Cog uses
   CoreAudio/AVFoundation on macOS).
-
-### High-value ports still open
-
-- **HTTP source** — streaming URLs. Cog: `Plugins/HTTPSource/`.
-- **CoreAudio decoder** — AAC / M4A / ALAC. Dominates most macOS
-  libraries. Cog: `Plugins/CoreAudio/`.
 - **FFmpeg decoder** — universal codec fallback; one dep replaces
   many niche decoders below. Cog: `Plugins/FFMPEG/`.
 - **CueSheet container** — virtual tracks from `.cue`. Cog:
   `Plugins/CueSheet/`.
 - **M3U / PLS** playlist parsers. Cog: `Plugins/M3u/`, `Plugins/Pls/`.
+- **ArchiveSource** — read from inside ZIP/7Z/RAR. Cog:
+  `Plugins/ArchiveSource/`. Uses libarchive, unlike Cog. See below
+  as well.
+
+### High-value ports still open
+
+- **HTTP source** — A new URLSession reader replaced the original
+  libcurl version, primarily to facilitate using the system proxy
+  servers. May be worth porting as a preferred implementation in
+  the future. Cog: `Plugins/HTTPSource/`.
+- **CoreAudio decoder** — AAC / M4A / ALAC. Dominates most macOS
+  libraries. Cog: `Plugins/CoreAudio/`.
 - **ReplayGain application** — tags are already surfaced; needs a
   DSP stage that applies them. Cog handles this in its fader node.
 - **`DSPFaderNode`** — fade-in/out, smooth stop. Cog:
   `Audio/Chain/DSP/DSPFaderNode.*`.
-- **ArchiveSource** — read from inside ZIP/7Z/RAR. Cog:
-  `Plugins/ArchiveSource/`.
+- **ArchiveSource** — The currently ported implementation only
+  supports unpack:// URLs, but does not actually index raw archives
+  passed for playback to look for all playable files inside.
 
 ### Lossless / niche-format decoders
 
@@ -281,7 +297,12 @@ Cog's GitHub org is **losnoco** (not "losno"). Upstream URL:
 GME (multi-system game music), vgmstream (500+ game formats), libvgm,
 SID (sidplayfp), DUMB / modplay / OpenMPT / playptmod (trackers),
 MIDI + soundfont, AdPlug (OPL2/3), HighlyComplete, Hively, Syntrax,
-Organya, APL, BASSMODS. All separate libraries.
+Organya. All separate libraries.
+
+Suggested to integrate these formats' abilities to play indefinitely
+with any `Repeat Track` function in the player, so that option will
+enable such behavior without requiring a dedicated option. Cog already
+does this with its `Repeat Track` option.
 
 ### Metadata / library
 
@@ -301,8 +322,10 @@ Organya, APL, BASSMODS. All separate libraries.
 
 ### Operational / non-Cog gaps
 
-- **Linux bring-up** is untested — `meson.build` has the ALSA/Pulse
-  paths wired but no one has run it on Linux yet.
+- **Linux bring-up** — `meson.build` has the ALSA/Pulse paths wired,
+  and the Linux platform has been tested on Arch Linux, but other
+  distributions may be worth testing in the future, including setting
+  up CI on Github to publish binary packages.
 - **HTTP SSE over TLS**: we bind 127.0.0.1 only; put a reverse proxy
   in front for remote access.
 - **Sample-accurate seek through `ConverterNode`** — the resampler

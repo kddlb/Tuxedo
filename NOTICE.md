@@ -23,3 +23,9 @@ not redistribute.
 - `vendor/miniaudio/miniaudio.h` — miniaudio 0.11.22
   (<https://github.com/mackron/miniaudio>), dual-licensed MIT-0 /
   public domain.
+- `vendor/httplib/httplib.h` — cpp-httplib 0.22.0
+  (<https://github.com/yhirose/cpp-httplib>), MIT licensed.
+- `vendor/json/nlohmann/json.hpp` — nlohmann-json 3.12.0
+  (<https://github.com/nlohmann/json>), MIT licensed.
+- `vendor/minimp3/minimp3{{,_ex}.h,_impl.c}` — minimp3 plus modifications
+  (<https://github.com/kode54/minimp3>), CC0-1.0 licensed.
