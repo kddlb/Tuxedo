@@ -9,6 +9,10 @@
 #include <stddef.h>
 #include "minimp3.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* flags for mp3dec_ex_open_* functions */
 #define MP3D_SEEK_TO_BYTE   0      /* mp3dec_ex_seek seeks to byte in stream */
 #define MP3D_SEEK_TO_SAMPLE 1      /* mp3dec_ex_seek precisely seeks to sample using index (created during duration calculation scan or when mp3dec_ex_seek called) */
@@ -89,10 +93,6 @@ typedef struct
 
 typedef int (*MP3D_ITERATE_CB)(void *user_data, const uint8_t *frame, int frame_size, int free_format_bytes, size_t buf_size, uint64_t offset, mp3dec_frame_info_t *info);
 typedef int (*MP3D_PROGRESS_CB)(void *user_data, size_t file_size, uint64_t offset, mp3dec_frame_info_t *info);
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /* detect mp3/mpa format */
 int mp3dec_detect_buf(const uint8_t *buf, size_t buf_size);
